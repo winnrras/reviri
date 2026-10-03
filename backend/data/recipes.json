@@ -1,0 +1,78 @@
+[
+  {"id": "creamy-spinach-chicken", "name": "Creamy Spinach Chicken", "servings": 4, "ingredients": [
+    {"canonical": "chicken_breast", "qty_base": 680, "unit_base": "g"},
+    {"canonical": "heavy_cream", "qty_base": 240, "unit_base": "ml"},
+    {"canonical": "spinach", "qty_base": 150, "unit_base": "g"},
+    {"canonical": "garlic", "qty_base": 3, "unit_base": "count"},
+    {"canonical": "olive_oil", "qty_base": 15, "unit_base": "ml"},
+    {"canonical": "parmesan", "qty_base": 30, "unit_base": "g"}
+  ]},
+  {"id": "spinach-mushroom-quiche", "name": "Spinach & Mushroom Quiche", "servings": 6, "ingredients": [
+    {"canonical": "eggs", "qty_base": 4, "unit_base": "count"},
+    {"canonical": "heavy_cream", "qty_base": 120, "unit_base": "ml"},
+    {"canonical": "spinach", "qty_base": 100, "unit_base": "g"},
+    {"canonical": "mushrooms", "qty_base": 150, "unit_base": "g"},
+    {"canonical": "cheddar", "qty_base": 100, "unit_base": "g"},
+    {"canonical": "onion", "qty_base": 80, "unit_base": "g"}
+  ]},
+  {"id": "mushroom-cream-pasta", "name": "Mushroom Cream Pasta", "servings": 4, "ingredients": [
+    {"canonical": "pasta", "qty_base": 400, "unit_base": "g"},
+    {"canonical": "mushrooms", "qty_base": 250, "unit_base": "g"},
+    {"canonical": "heavy_cream", "qty_base": 120, "unit_base": "ml"},
+    {"canonical": "garlic", "qty_base": 2, "unit_base": "count"},
+    {"canonical": "parmesan", "qty_base": 40, "unit_base": "g"},
+    {"canonical": "butter", "qty_base": 20, "unit_base": "g"}
+  ]},
+  {"id": "chicken-fried-rice", "name": "Chicken Fried Rice", "servings": 4, "ingredients": [
+    {"canonical": "chicken_breast", "qty_base": 300, "unit_base": "g"},
+    {"canonical": "rice", "qty_base": 300, "unit_base": "g"},
+    {"canonical": "eggs", "qty_base": 2, "unit_base": "count"},
+    {"canonical": "broccoli", "qty_base": 150, "unit_base": "g"},
+    {"canonical": "soy_sauce", "qty_base": 30, "unit_base": "ml"},
+    {"canonical": "garlic", "qty_base": 2, "unit_base": "count"},
+    {"canonical": "onion", "qty_base": 80, "unit_base": "g"}
+  ]},
+  {"id": "chicken-fajita-bowls", "name": "Chicken Fajita Bowls", "servings": 4, "ingredients": [
+    {"canonical": "chicken_breast", "qty_base": 450, "unit_base": "g"},
+    {"canonical": "bell_pepper", "qty_base": 300, "unit_base": "g"},
+    {"canonical": "onion", "qty_base": 120, "unit_base": "g"},
+    {"canonical": "rice", "qty_base": 300, "unit_base": "g"},
+    {"canonical": "black_beans", "qty_base": 240, "unit_base": "g"},
+    {"canonical": "cilantro", "qty_base": 20, "unit_base": "g"},
+    {"canonical": "lemon", "qty_base": 1, "unit_base": "count"}
+  ]},
+  {"id": "spinach-omelette", "name": "Spinach Omelette", "servings": 2, "ingredients": [
+    {"canonical": "eggs", "qty_base": 4, "unit_base": "count"},
+    {"canonical": "spinach", "qty_base": 60, "unit_base": "g"},
+    {"canonical": "cheddar", "qty_base": 40, "unit_base": "g"},
+    {"canonical": "butter", "qty_base": 10, "unit_base": "g"}
+  ]},
+  {"id": "creamy-tomato-soup", "name": "Creamy Tomato Soup", "servings": 4, "ingredients": [
+    {"canonical": "tomato", "qty_base": 600, "unit_base": "g"},
+    {"canonical": "heavy_cream", "qty_base": 120, "unit_base": "ml"},
+    {"canonical": "onion", "qty_base": 100, "unit_base": "g"},
+    {"canonical": "garlic", "qty_base": 2, "unit_base": "count"},
+    {"canonical": "butter", "qty_base": 20, "unit_base": "g"}
+  ]},
+  {"id": "broccoli-cheddar-soup", "name": "Broccoli Cheddar Soup", "servings": 4, "ingredients": [
+    {"canonical": "broccoli", "qty_base": 400, "unit_base": "g"},
+    {"canonical": "cheddar", "qty_base": 150, "unit_base": "g"},
+    {"canonical": "heavy_cream", "qty_base": 120, "unit_base": "ml"},
+    {"canonical": "onion", "qty_base": 100, "unit_base": "g"},
+    {"canonical": "butter", "qty_base": 20, "unit_base": "g"}
+  ]},
+  {"id": "garlic-mushroom-rice-bowl", "name": "Garlic Mushroom Rice Bowl", "servings": 2, "ingredients": [
+    {"canonical": "mushrooms", "qty_base": 200, "unit_base": "g"},
+    {"canonical": "rice", "qty_base": 150, "unit_base": "g"},
+    {"canonical": "garlic", "qty_base": 2, "unit_base": "count"},
+    {"canonical": "soy_sauce", "qty_base": 15, "unit_base": "ml"},
+    {"canonical": "spinach", "qty_base": 50, "unit_base": "g"}
+  ]},
+  {"id": "cilantro-lime-chicken-tacos", "name": "Cilantro-Lime Chicken Tacos", "servings": 4, "ingredients": [
+    {"canonical": "chicken_breast", "qty_base": 400, "unit_base": "g"},
+    {"canonical": "tortillas", "qty_base": 8, "unit_base": "count"},
+    {"canonical": "cilantro", "qty_base": 20, "unit_base": "g"},
+    {"canonical": "lemon", "qty_base": 1, "unit_base": "count"},
+    {"canonical": "onion", "qty_base": 60, "unit_base": "g"}
+  ]}
+]

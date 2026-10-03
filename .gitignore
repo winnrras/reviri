@@ -1,0 +1,13 @@
+.DS_Store
+.env
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcuserstate
+build/
