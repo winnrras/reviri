@@ -166,6 +166,19 @@ def test_rows_to_items_maps_and_skips_unknown():
     assert len(items) == 4
 
 
+def test_rows_to_items_garlic_bulb_is_a_pack_of_cloves():
+    rows = [{"raw": "GARLIC BULB", "canonical": "garlic", "qty": 2, "unit": "count"},
+            {"raw": "LEMONS 3 @ 0.69", "canonical": "lemon", "qty": 3, "unit": "count"}]
+    got = {i.canonical: i.qty_base for i in receipt.rows_to_items(rows, TODAY)}
+    assert got["garlic"] == 2 * catalog.pack_size("garlic")
+    assert got["lemon"] == 3              # ordinary count items are unchanged
+
+
+def test_half_gallon_of_milk():
+    rows = [{"raw": "2% MILK 1/2 GAL", "canonical": "milk", "qty": 0.5, "unit": "gal"}]
+    assert receipt.rows_to_items(rows, TODAY)[0].qty_base == pytest.approx(1892.7, abs=0.1)
+
+
 # ---- streak
 
 def test_streak_counts_consecutive_days_and_resets_after_gap(store):

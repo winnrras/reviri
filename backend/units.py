@@ -6,6 +6,7 @@ _ALIASES = {
     "ounce": "oz", "ounces": "oz", "pound": "lb", "pounds": "lb", "lbs": "lb",
     "milliliter": "ml", "millilitre": "ml", "liter": "l", "litre": "l",
     "floz": "fl_oz", "fl oz": "fl_oz", "fluid ounce": "fl_oz",
+    "gallon": "gal", "gallons": "gal", "quart": "qt", "quarts": "qt", "pint": "pt", "pints": "pt",
     "teaspoon": "tsp", "tablespoon": "tbsp", "cups": "cup",
     "each": "count", "ea": "count", "pc": "count", "pcs": "count", "piece": "count",
     "pieces": "count", "ct": "count", "unit": "count", "units": "count",
@@ -16,6 +17,7 @@ _TO_BASE: Dict[str, Tuple[str, float]] = {
     "g": ("g", 1.0), "kg": ("g", 1000.0), "oz": ("g", 28.3495), "lb": ("g", 453.592),
     "ml": ("ml", 1.0), "l": ("ml", 1000.0), "tsp": ("ml", 4.92892), "tbsp": ("ml", 14.7868),
     "cup": ("ml", 236.588), "fl_oz": ("ml", 29.5735),
+    "gal": ("ml", 3785.41), "qt": ("ml", 946.353), "pt": ("ml", 473.176),
     "count": ("count", 1.0),
 }
 
