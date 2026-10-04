@@ -53,7 +53,7 @@ struct APIClient {
         body.append(jpeg)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         let request = try makeRequest("/parse-receipt", method: "POST", body: body,
-                                      contentType: "multipart/form-data; boundary=\(boundary)")
+                                      contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120)
         return try await perform(request)
     }
 
@@ -80,6 +80,16 @@ struct APIClient {
     func cook(_ request: CookRequest) async throws -> CookResponse {
         if useMock { await Mock.pause(); return CookResponse(leftovers: Mock.plan.leftovers, stats: Mock.stats) }
         return try await send("/cook", body: request)
+    }
+
+    /// Recipe search: Gemini writes a recipe for any dish name. Can take 10-30 seconds.
+    func generateRecipe(name: String) async throws -> Suggestion {
+        if useMock { await Mock.pause(); return Mock.searchResult(name) }
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let request = try makeRequest("/recipes/generate", method: "POST",
+                                      body: try encoder.encode(GenerateRecipeRequest(name: name)), timeout: 120)
+        return try await perform(request)
     }
 
     func suggestions() async throws -> [Suggestion] {
@@ -111,13 +121,14 @@ struct APIClient {
     // MARK: - Plumbing
 
     private func makeRequest(_ path: String, method: String, body: Data? = nil,
-                             contentType: String = "application/json") throws -> URLRequest {
+                             contentType: String = "application/json",
+                             timeout: TimeInterval = 60) throws -> URLRequest {
         guard let base = baseURL, let url = URL(string: base.absoluteString + path) else {
             throw APIError.badURL
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.timeoutInterval = 60
+        request.timeoutInterval = timeout
         if let body {
             request.httpBody = body
             request.setValue(contentType, forHTTPHeaderField: "Content-Type")

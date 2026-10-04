@@ -10,6 +10,7 @@ _ALIASES = {
     "teaspoon": "tsp", "tablespoon": "tbsp", "cups": "cup",
     "each": "count", "ea": "count", "pc": "count", "pcs": "count", "piece": "count",
     "pieces": "count", "ct": "count", "unit": "count", "units": "count",
+    "clove": "count", "cloves": "count", "large": "count", "medium": "count", "whole": "count",
 }
 
 # unit -> (base unit, multiplier)

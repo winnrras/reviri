@@ -12,12 +12,15 @@ final class AppState {
     var nextWeek: NextWeekResponse?
     var stats: Stats = .empty
     var lastScan: [InventoryItem] = []
+    var searchResult: Suggestion?           // last recipe found by search (Next Up)
+    var isSearching = false
     var isLoading = false
     var errorMessage: String?
     var infoMessage: String?
 
     @ObservationIgnored private let api = APIClient()
     @ObservationIgnored private var planToken = 0
+    @ObservationIgnored private var searchQuery: String?   // what was typed, to re-check searchResult
 
     /// Runs `work`, shows a spinner, and turns any thrown error into an alert.
     private func attempt(spinner: Bool = true, _ work: () async throws -> Void) async {
@@ -30,6 +33,11 @@ final class AppState {
         inventory = try await api.inventory()
         stats = try await api.stats()
         suggestions = try await api.suggestions()
+        // The search result's "uses up / still need" depends on the pantry. Cached on the server, so instant.
+        // Best effort: a failure here keeps the old result instead of showing an error.
+        if let searchQuery, let fresh = try? await api.generateRecipe(name: searchQuery) {
+            searchResult = fresh
+        }
     }
 
     // MARK: - Loading
@@ -136,6 +144,35 @@ final class AppState {
                 infoMessage = "Nice! You rescued \(Int(rescued.rounded())) g of food."
             }
         }
+    }
+
+    // MARK: - Recipe search
+
+    /// Gemini writes a recipe for `name`. Uses its own spinner, since it can take 10-30 seconds.
+    func searchRecipe(_ name: String) async {
+        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, !isSearching else { return }
+        isSearching = true
+        defer { isSearching = false }
+        await attempt(spinner: false) {
+            let result = try await api.generateRecipe(name: query)
+            searchResult = result
+            searchQuery = query
+            // Make it pickable on the Plan tab too.
+            if !recipes.contains(where: { $0.id == result.recipe.id }) {
+                recipes.append(result.recipe)
+            }
+        }
+    }
+
+    func addToPlan(_ recipe: Recipe) {
+        setPick(recipe.id, servings: picks[recipe.id] ?? recipe.servings)
+        infoMessage = "Added \(recipe.name) to the Plan tab."
+    }
+
+    func clearSearch() {
+        searchResult = nil
+        searchQuery = nil
     }
 
     func planNextWeek(meals: Int) async {

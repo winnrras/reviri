@@ -14,7 +14,10 @@ class Recipe(BaseModel):
     id: str
     name: str
     servings: int
-    ingredients: List[IngredientQty]
+    ingredients: List[IngredientQty]       # tracked: these move the pantry math
+    steps: List[str] = []                  # cooking steps (only generated recipes have them)
+    untracked: List[str] = []              # ingredients outside our catalog, e.g. "1 tsp paprika"
+    generated: bool = False                # True = written by Gemini from a search
 
 
 class InventoryItem(BaseModel):
@@ -83,6 +86,10 @@ class Suggestion(BaseModel):
     rescued: List[str]
     missing: List[ShoppingItem]
     score: float
+
+
+class GenerateRecipeRequest(BaseModel):
+    name: str                  # what the user typed, e.g. "chicken alfredo"
 
 
 class SuggestionsResponse(BaseModel):

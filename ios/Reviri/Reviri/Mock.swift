@@ -68,6 +68,26 @@ enum Mock {
         baselineWasteG: 1372
     )
 
+    /// Recipe search without a server: always the same alfredo, renamed to what was typed.
+    static func searchResult(_ name: String) -> Suggestion {
+        let recipe = Recipe(
+            id: "gen-mock", name: name.capitalized, servings: 4,
+            ingredients: [
+                RecipeIngredient(canonical: "chicken_breast", qtyBase: 450, unitBase: "g"),
+                RecipeIngredient(canonical: "heavy_cream", qtyBase: 240, unitBase: "ml"),
+                RecipeIngredient(canonical: "pasta", qtyBase: 340, unitBase: "g"),
+            ],
+            steps: ["Cook the pasta in salted water.", "Sear the chicken until golden, then slice.",
+                    "Simmer the cream, toss everything together and serve."],
+            untracked: ["1/2 tsp salt", "1/4 tsp black pepper"],
+            generated: true)
+        return Suggestion(recipe: recipe,
+                          reason: "Uses up 450 g chicken breast, 240 ml heavy cream (soonest spoils in 2 days). Still need: pasta.",
+                          rescued: ["450 g chicken breast", "240 ml heavy cream"],
+                          missing: [ShoppingItem(canonical: "pasta", displayName: "Pasta", qtyBase: 454, unitBase: "g")],
+                          score: 40)
+    }
+
     static let stats = Stats(gramsSaved: 370, dollarsSaved: 3.1, co2eSaved: 0.9, streakDays: 3, checkedInToday: false)
     static let statsCheckedIn = Stats(gramsSaved: 370, dollarsSaved: 3.1, co2eSaved: 0.9, streakDays: 4, checkedInToday: true)
 }

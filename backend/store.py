@@ -3,7 +3,7 @@ Everything else only talks to the Store through these attributes and methods."""
 import json
 from datetime import date, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import logic
 from models import InventoryItem, Recipe, Stats
@@ -18,6 +18,10 @@ class Store:
     def __init__(self) -> None:
         with open(_DATA / "recipes.json") as f:
             self.recipes: List[Recipe] = [Recipe(**r) for r in json.load(f)]
+        # Recipes Gemini wrote for searches, keyed by slug ("chicken-alfredo").
+        # Kept separate from the recipe book, so suggestions and the waste forecast
+        # only ever use the fixed book. Survives reset() so repeat searches stay instant.
+        self.generated: Dict[str, Recipe] = {}
         self.reset()
 
     def reset(self) -> None:
@@ -29,8 +33,11 @@ class Store:
         self.streak_days = 0
         self.last_checkin: Optional[date] = None
 
+    def all_recipes(self) -> List[Recipe]:
+        return self.recipes + list(self.generated.values())
+
     def recipe(self, recipe_id: str) -> Optional[Recipe]:
-        for r in self.recipes:
+        for r in self.all_recipes():
             if r.id == recipe_id:
                 return r
         return None

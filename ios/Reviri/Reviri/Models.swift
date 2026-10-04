@@ -13,7 +13,10 @@ struct Recipe: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let servings: Int
-    let ingredients: [RecipeIngredient]
+    let ingredients: [RecipeIngredient]   // tracked: these move the pantry math
+    var steps: [String] = []              // cooking steps (only generated recipes have them)
+    var untracked: [String] = []          // ingredients outside our catalog, e.g. "1 tsp paprika"
+    var generated: Bool = false           // true = written by Gemini from a search
 }
 
 struct InventoryItem: Codable, Identifiable, Hashable {
@@ -85,6 +88,10 @@ struct Suggestion: Codable, Identifiable, Hashable {
     let score: Double
 }
 
+struct GenerateRecipeRequest: Codable {
+    let name: String
+}
+
 struct SuggestionsResponse: Codable {
     let suggestions: [Suggestion]
 }
@@ -103,7 +110,13 @@ struct NextWeekResponse: Codable, Hashable {
     let baselineWasteG: Double
 }
 
-// MARK: - Display helper
+// MARK: - Display helpers
+
+/// "chicken_breast" -> "Chicken breast", for ingredients that aren't in the pantry.
+func ingredientName(_ canonical: String) -> String {
+    let words = canonical.replacingOccurrences(of: "_", with: " ")
+    return words.prefix(1).uppercased() + words.dropFirst()
+}
 
 /// 680 g, 233 ml, 12 pcs. Whole numbers when they're whole.
 func qtyText(_ qty: Double, _ unit: String) -> String {

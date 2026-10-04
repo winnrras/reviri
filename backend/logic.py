@@ -264,6 +264,13 @@ def suggest(inventory: List[InventoryItem], recipes: List[Recipe], today: date,
     ]
 
 
+def describe_recipe(inventory: List[InventoryItem], recipe: Recipe, today: date) -> Suggestion:
+    """Any recipe (e.g. one found by search), described against the pantry like a suggestion."""
+    score, rescued, short, soonest = score_recipe(inventory, recipe, recipe.servings, today)
+    return Suggestion(recipe=recipe, reason=_reason(rescued, short, soonest), rescued=rescued,
+                      missing=to_shopping(short), score=round(score, 1))
+
+
 def plan_week(inventory: List[InventoryItem], recipes: List[Recipe], n: int, today: date):
     """Greedy planner: repeatedly pick the recipe with the best score, cook it virtually,
     buy missing food in whole packages, and let later recipes reuse the package leftovers.

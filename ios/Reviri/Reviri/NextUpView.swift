@@ -3,10 +3,42 @@ import SwiftUI
 struct NextUpView: View {
     @Environment(AppState.self) private var state
     @State private var mealCount = 4
+    @State private var query = ""
 
     var body: some View {
         NavigationStack {
             List {
+                if state.isSearching {
+                    Section("Recipe search") {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Writing a recipe for \u{201C}\(query)\u{201D}… this can take up to 30 seconds.")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else if let result = state.searchResult {
+                    Section {
+                        NavigationLink {
+                            RecipeDetailView(suggestion: result)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(result.recipe.name).font(.headline)
+                                Text(result.reason)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Recipe search")
+                            Spacer()
+                            Button("Clear") { state.clearSearch() }
+                                .font(.caption)
+                        }
+                    }
+                }
+
                 Section {
                     if state.suggestions.isEmpty {
                         Text("Nothing urgent. Scan a receipt, or cook something, and ideas show up here.")
@@ -81,6 +113,10 @@ struct NextUpView: View {
                 }
             }
             .navigationTitle("Next Up")
+            .searchable(text: $query, prompt: "Search any recipe")
+            .onSubmit(of: .search) {
+                Task { await state.searchRecipe(query) }
+            }
             .refreshable { await state.loadSuggestions() }
             .task { await state.loadSuggestions() }
         }
@@ -112,5 +148,78 @@ struct SuggestionRow: View {
             .buttonStyle(.borderedProminent)
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// A full recipe: what it uses from the pantry, ingredients, steps, and actions.
+struct RecipeDetailView: View {
+    @Environment(AppState.self) private var state
+    let suggestion: Suggestion
+
+    /// Stay up to date after cooking (the pantry changed, so "uses up / still need" did too).
+    private var current: Suggestion {
+        if let fresh = state.searchResult, fresh.recipe.id == suggestion.recipe.id { return fresh }
+        return suggestion
+    }
+
+    var body: some View {
+        let recipe = current.recipe
+        List {
+            Section {
+                Text(current.reason)
+                if !current.missing.isEmpty {
+                    Text("Need to buy: " + current.missing.map { $0.displayName }.joined(separator: ", "))
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Section("Ingredients (serves \(recipe.servings))") {
+                ForEach(recipe.ingredients, id: \.canonical) { ing in
+                    HStack {
+                        Text(ingredientName(ing.canonical))
+                        Spacer()
+                        Text(qtyText(ing.qtyBase, ing.unitBase))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                ForEach(recipe.untracked, id: \.self) { line in
+                    HStack {
+                        Text(line)
+                        Spacer()
+                        Text("not tracked")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+
+            if !recipe.steps.isEmpty {
+                Section("Steps") {
+                    ForEach(Array(recipe.steps.enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text("\(index + 1).").bold()
+                            Text(step)
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Button("Cook this") {
+                    Task {
+                        await state.cook(recipeId: recipe.id, servings: recipe.servings, fromSuggestion: true)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Add to plan") { state.addToPlan(recipe) }
+            } footer: {
+                if recipe.generated {
+                    Text("Written by Gemini from your search. \u{201C}Not tracked\u{201D} items aren't in Reviri's pantry list, so cooking doesn't count them.")
+                }
+            }
+        }
+        .navigationTitle(recipe.name)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
