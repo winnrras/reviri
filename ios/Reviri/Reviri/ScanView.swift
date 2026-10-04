@@ -69,72 +69,134 @@ struct ScanView: View {
         return soon == 1 ? "1 item to use by tomorrow" : "\(soon) items to use by tomorrow"
     }
 
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(greeting).font(.title2.bold())
-                        Text(nudge).foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
+    /// Figma "Receipt scan card": hero, receipt actions, and the fridge scan box.
+    private var scanCard: some View {
+        VStack(spacing: 12) {
+            Image("SaladIllustration")
+                .resizable()
+                .frame(width: 180, height: 104)
+                .accessibilityHidden(true)
+            VStack(spacing: 6) {
+                Text("Turn your groceries into less waste")
+                    .font(Theme.headline).foregroundStyle(Theme.text)
+                Text("Scan a receipt to automatically add items to your pantry.")
+                    .font(.system(size: 14)).foregroundStyle(Theme.secondaryText)
+            }
+            .multilineTextAlignment(.center)
 
-                Section {
-                    Button {
-                        if VNDocumentCameraViewController.isSupported {
-                            showScanner = true
-                        } else {
-                            state.errorMessage = "The camera scanner isn't available here (the Simulator has no camera). Use \"Choose from Photos\" or \"Use demo receipt\"."
-                        }
-                    } label: {
-                        Label("Scan receipt", systemImage: "camera.viewfinder")
-                    }
-
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label("Choose from Photos", systemImage: "photo")
-                    }
-
-                    Button {
-                        Task { await state.useDemoReceipt() }
-                    } label: {
-                        Label("Use demo receipt", systemImage: "doc.text")
-                    }
-                } footer: {
-                    Text("Receipts give us exact quantities. Scan after every grocery trip.")
-                }
-
-                Section {
-                    if state.isScanningFridge {
-                        HStack(spacing: 12) {
-                            ProgressView()
-                            Text("Looking at your fridge… this can take up to 30 seconds.")
-                                .foregroundStyle(.secondary)
-                        }
+            VStack(spacing: 8) {
+                Button {
+                    if VNDocumentCameraViewController.isSupported {
+                        showScanner = true
                     } else {
-                        Button {
-                            showFridgeOptions = true
-                        } label: {
-                            Label("Scan fridge", systemImage: "refrigerator")
-                        }
+                        state.errorMessage = "The camera scanner isn't available here (the Simulator has no camera). Use \"Choose from Photos\" or \"Use demo receipt\"."
                     }
-                } footer: {
-                    Text("Snap the inside of your fridge to update what's left. You check every amount before it's saved.")
+                } label: {
+                    Label("Scan receipt", systemImage: "camera").font(.system(size: 17, weight: .bold))
+                }
+                .buttonStyle(PrimaryButtonStyle(height: 50))
+
+                PhotosPicker(selection: $photoItem, matching: .images) {
+                    Text("Choose from Photos")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.buttonRadius))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.buttonRadius).stroke(Theme.border, lineWidth: 1))
                 }
 
-                if !state.lastScan.isEmpty {
-                    Section("Just added (tap to fix an amount)") {
-                        ForEach(state.lastScan) { item in
-                            InventoryRow(item: item)
-                                .onTapGesture { editing = item }
-                        }
-                    }
+                Button("Use demo receipt") {
+                    Task { await state.useDemoReceipt() }
+                }
+                .font(Theme.footnote)
+                .foregroundStyle(Theme.secondaryText)
+                .frame(minHeight: 32)
+
+                fridgeBox
+            }
+
+            Text("Receipts give us exact quantities. Scan after every grocery trip.")
+                .font(.system(size: 12)).foregroundStyle(Theme.secondaryText)
+                .multilineTextAlignment(.center)
+        }
+        .padding(20)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+    }
+
+    /// Figma "Fridge Scan": icon, copy, and the take-photo action (or the reading state).
+    private var fridgeBox: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                IconTile(systemName: "refrigerator", size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Scan Fridge").font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.text)
+                    Text("Photograph inside your fridge to update what's left. You check every amount before it's saved.")
+                        .font(Theme.footnote).foregroundStyle(Theme.secondaryText)
                 }
             }
+            if state.isScanningFridge {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Looking at your fridge\u{2026} up to 30 seconds")
+                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.text)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.buttonRadius))
+            } else {
+                Button {
+                    showFridgeOptions = true
+                } label: {
+                    Label("Take photo or choose from library", systemImage: "camera")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.buttonRadius))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(Theme.border, lineWidth: 1))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(greeting).font(.system(size: 22, weight: .bold)).foregroundStyle(Theme.text)
+                        Text(nudge).font(Theme.subhead).foregroundStyle(Theme.secondaryText)
+                    }
+
+                    scanCard
+
+                    DidYouKnowCard()
+
+                    if !state.lastScan.isEmpty {
+                        Text("Just added (tap to fix an amount)").sectionTitle().padding(.top, 8)
+                        VStack(spacing: 0) {
+                            ForEach(Array(state.lastScan.enumerated()), id: \.element.id) { index, item in
+                                if index > 0 { Divider().overlay(Theme.divider).padding(.vertical, 8) }
+                                InventoryRow(item: item)
+                                    .onTapGesture { editing = item }
+                            }
+                        }
+                        .card()
+                    }
+                }
+                .padding(16)
+            }
+            .contentMargins(.bottom, Theme.tabBarClearance, for: .scrollContent)
+            .background(Theme.background)
             .navigationTitle("Scan")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape").foregroundStyle(Theme.secondaryText)
+                    }
+                    .accessibilityLabel("Settings")
                 }
             }
             .fullScreenCover(isPresented: $showScanner) {
@@ -190,6 +252,13 @@ struct ScanView: View {
                 set: { if !$0 { state.fridgeItems = nil } }
             )) {
                 FridgeReviewView(items: state.fridgeItems ?? [])
+            }
+            .task {
+                // For screenshots: launch with `-openSheet Settings` (or `Fridge` for sample results).
+                let sheet = UserDefaults.standard.string(forKey: "openSheet")
+                guard sheet == "Settings" || sheet == "Fridge" else { return }
+                try? await Task.sleep(for: .milliseconds(600))
+                if sheet == "Settings" { showSettings = true } else { state.fridgeItems = Mock.fridgeItems }
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()

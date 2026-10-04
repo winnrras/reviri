@@ -1,98 +1,87 @@
-# Reviri (MHacks 26 starter)
+# Reviri
 
-Scan a grocery receipt, plan meals, see exactly what will be left over, and get suggestions that use it up before it spoils.
+**Use it before you lose it.** Reviri is an iPhone app that stops food from going to waste at home. Scan a grocery receipt (or snap your fridge), and Reviri knows what you have and when it spoils. It turns what's about to go bad into your next meal, plans your week so leftovers get used, and texts you the morning something needs eating.
 
-- `backend/` Python (FastAPI). All the math lives here and is tested: `pytest` should say **26 passed**.
-- `ios/Reviri/` SwiftUI app (iOS 17+). Starts in **mock mode**, so it runs before the server does.
+Built at **MHacks 26** (Sustainability track) in 30 hours.
 
-## 1. Run the backend (Terminal on your Mac)
+Households cause 60% of the world's food waste ([UNEP Food Waste Index Report 2024](https://www.unep.org/resources/publication/food-waste-index-report-2024)). Most of it isn't a choice: food gets forgotten at the back of the fridge, or a recipe needs half a tub of cream and the rest goes off. Reviri fixes the forgetting and the half-tubs.
+
+## What it does
+
+| Feature | How it works |
+| --- | --- |
+| **Scan a receipt** | Gemini reads the photo and maps every line to a fixed ingredient list; Python does all the unit math. "ORG BNLS CHKN BRST 1.52 lb" becomes 689 g chicken breast with a 1-day shelf life. |
+| **Scan your fridge** | Gemini sees what's in the photo, reads brands and estimates how full each container is. Items already in the pantry are *updated*, not added twice. You review every amount before saving. |
+| **Plan with live leftovers** | Pick meals and servings; the leftovers (with spoil dates) update as you go. Missing food is bought in whole packages, and the unused part becomes stock later meals can use. |
+| **Next Up** | Ranks recipes by how much about-to-spoil food they rescue, minus a penalty for each thing you'd have to buy. "Cook this" counts the rescued food on Savings. |
+| **Plan ahead + waste forecast** | Plans N meals that share ingredients, builds the shopping list, and compares the leftover waste against the average of 200 random plans from the same recipe book. |
+| **Recipe search** | Type any dish; Gemini writes the recipe, mapped onto the same ingredients, so it can be cooked and planned like any other. |
+| **Rewind** | An undo for your pantry, up to 6 hours back, with zero history code: it's Neon Time Travel (see below). |
+| **Text alerts** | Every morning at 9 AM, an iMessage lists what spoils by tomorrow. "Text me this list" sends any shopping list to your phone. Sent with Photon. |
+| **Honest streak** | Check in daily once nothing in the pantry has expired. Logging food as "threw it away" is counted on Savings but never breaks the streak, so people stay honest. |
+| **Savings** | Food rescued, money saved, CO2e avoided, food thrown away. |
+
+## Sponsor technology
+
+**Neon (Postgres + Time Travel + Functions)**
+- **Postgres:** all state (pantry lots, stats, settings, generated recipes) is saved after every change in one transaction (`backend/db.py`) and survives restarts.
+- **Time Travel, as a user feature:** Rewind asks Neon for a read-only connection to the database *as it was* at a past moment (`backend/rewind.py`). Neon spins up a temporary branch, we read the pantry, write it back to the present, and Neon deletes the branch 30 seconds later. Reviri stores no history of its own.
+- **Functions + schedule triggers:** the 9 AM spoil alert runs as a Neon Function next to the data (`backend/neon/daily-alert/`), so it's sent even when the laptop and the API server are off.
+
+**Photon (Spectrum, iMessage)**
+- Daily spoil alerts and "Text me this list" go out over iMessage through Spectrum cloud (`backend/notify/send.mjs`, and inside the Neon Function). Local mode (the Mac's Messages app) works without an account.
+
+**Google Gemini**
+- Reads receipts and fridge photos and writes searched recipes. Gemini never does arithmetic: it only maps text to fixed ingredient keys, and every number is computed and tested in Python. Retries and model fallbacks keep the demo alive when a model is busy.
+
+**Figma**
+- The whole UI follows the team's Figma file: tokens (`ios/Reviri/Reviri/Theme.swift`), screens, and the illustrations exported as vectors.
+
+## Where the numbers come from
+
+- **Shelf lives:** USDA FoodKeeper (low end of each range).
+- **Prices:** US Bureau of Labor Statistics average prices (Aug 2026) where a series exists; the rest are labelled estimates.
+- **CO2e:** Poore & Nemecek (2018, *Science*), by food group.
+
+Every value and its source is listed in [`backend/data/SOURCES.md`](backend/data/SOURCES.md). The waste forecast is a comparison against random plans from the same recipe book, not a real-world measurement.
+
+## How it's built
+
+```
+iPhone app (SwiftUI)  ──HTTP──▶  FastAPI server (Python)  ──▶  Neon Postgres
+                                   │   logic.py: all the math (tested)
+                                   ├──▶ Gemini (receipts, fridge photos, recipes)
+                                   └──▶ Photon Spectrum (iMessage)
+Neon Function (Node, 9 AM schedule) ──▶ Neon Postgres + Photon Spectrum
+```
+
+- `backend/`: FastAPI, pydantic, psycopg. `logic.py` is pure, deterministic Python: inventory "lots" with purchase dates, soonest-to-spoil-first consumption, whole-package buying, recipe scoring, the 200-random-plan baseline. **59 tests** (`pytest`), including persistence against a real Postgres.
+- `ios/Reviri/`: SwiftUI, iOS 17+, one `@Observable` app state, and a **mock mode** that runs every screen with no server (the demo backup).
+
+## Run it
+
+**Backend** (Python 3.9+, Node 20+):
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pytest                      # sanity check
-export GEMINI_API_KEY=your-key-from-aistudio.google.com   # optional
+cp .env.example .env            # then fill in your keys (never commit .env)
+(cd notify && npm install)      # Photon sender + Neon CLI
+pytest                          # 59 passed
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Open http://localhost:8000/docs and click through every endpoint in the browser.
-Without `GEMINI_API_KEY`, "scan receipt" returns the built-in demo receipt, so the whole flow works with no key.
-Run `source .venv/bin/activate` again in every new Terminal window before `uvicorn`.
+Every key is optional: without `GEMINI_API_KEY` the receipt scan returns a demo receipt, without `DATABASE_URL` state stays in memory, without Spectrum keys alerts go through the Mac's Messages app. API docs: http://localhost:8000/docs.
 
-## 2. Create the Xcode project
+Deploy the 9 AM alert to Neon: `.venv/bin/python neon/deploy.py` (needs the Neon and Spectrum keys in `.env`).
 
-1. Xcode > File > New > Project > **iOS > App**. Product Name `Reviri`, Interface **SwiftUI**, Language **Swift**, Testing System **None**, Storage **None**. Save it on your **Desktop** (not inside `ios/`, which already has a `Reviri` folder). Move the finished Xcode project next to `backend/` later if you want it in git.
-2. In the left sidebar, **delete** the `ReviriApp.swift` and `ContentView.swift` Xcode made (Move to Trash).
-3. Drag every `.swift` file from `ios/Reviri/` into the Xcode sidebar. Tick **Copy items if needed** and make sure the **Reviri target** box is checked.
-4. Click the blue project icon > target **Reviri** > **General**: set the minimum iOS deployment to **17.0**.
-5. Same screen, **Info** tab > add three rows (hover a row, click +):
-   - `Privacy - Camera Usage Description` = `Scan grocery receipts`
-   - `Privacy - Local Network Usage Description` = `Connect to the Reviri server`
-   - `App Transport Security Settings` > add child `Allow Arbitrary Loads` = `YES` (lets the app use plain `http://` to your Mac)
-6. Press **Cmd+R**. In the Simulator you get the full app on mock data. The camera doesn't exist there; use "Use demo receipt" or "Choose from Photos".
+**iPhone app:** open `ios/Reviri/Reviri.xcodeproj` in Xcode, choose your team and a unique bundle ID under Signing & Capabilities, and press ⌘R. The app starts in mock mode. To use the server: Scan tab > gear > turn off *Use mock data* and set the address to `http://<your-mac-ip>:8000` (`ipconfig getifaddr en0`).
 
-Only one person should do steps 1 to 5. Everyone else pulls the project from git. Don't edit the same Swift file at the same time, and avoid touching project settings after setup (the `.xcodeproj` file conflicts easily).
+## Known limits
 
-## 3. Run on a real iPhone (needed for the camera scanner)
-
-1. Plug in the iPhone. On the phone: Settings > Privacy & Security > **Developer Mode** > on (it restarts).
-2. Xcode > target > **Signing & Capabilities** > tick *Automatically manage signing*, pick your personal Apple ID as Team. Change the Bundle Identifier to something unique, like `com.yourname.reviri`.
-3. Pick your iPhone at the top of Xcode and press **Cmd+R**. Do this once early. Free signing expires after 7 days.
-4. First launch: Settings > General > VPN & Device Management > trust your Apple ID.
-
-## 4. Connect the app to the server
-
-In the app: **Scan tab > gear icon > Settings**. Turn off *Use mock data* and set the server address to `http://<your-mac-ip>:8000`.
-Get the IP with `ipconfig getifaddr en0` in Terminal. Phone and Mac must be on the same network.
-
-Hackathon wifi often blocks devices from talking to each other. If the app can't reach the server:
-- Turn on **Personal Hotspot** on the iPhone, join it from the Mac, and use the Mac's new IP; or
-- Use mock mode for the demo (it's the safety net), or
-- Deploy `backend/` to a host such as Render or Railway and use its `https://` address.
-
-## 5. Demo script (about 2 minutes)
-
-1. Settings > **Reset demo data**.
-2. **Scan** > scan a real receipt (or "Use demo receipt").
-3. **Plan** > Add *Creamy Spinach Chicken*. Leftover cream and spinach appear live. Tap **I cooked these**.
-4. **Next Up** > top suggestion is *Spinach & Mushroom Quiche*, "Nothing extra to buy". Tap **Cook this**: "You rescued 370 g".
-5. **Next Up > Plan ahead**: meals, shopping list, and the waste forecast vs. a random plan.
-6. **Savings**: food, money, CO2e, tap the streak check-in.
-
-## API (differences from the earlier draft)
-
-| Endpoint | Notes |
-|---|---|
-| `POST /parse-receipt` | multipart field `file`; adds parsed items to the pantry |
-| `POST /demo-receipt` | fixed sample receipt, no API key needed |
-| `GET /inventory`, `PUT /inventory/{id}`, `DELETE /inventory/{id}` | edit or remove a bad scan line |
-| `GET /recipes` | the recipe book |
-| `POST /plan` body `{picks:[{recipe_id, servings}]}` | preview only, saves nothing |
-| `POST /cook` | commits a meal; `from_suggestion: true` counts rescued food in stats |
-| `GET /suggestions` | richer than the draft: `{suggestions:[{recipe, reason, rescued, missing, score}]}` |
-| `POST /next-week` body `{meals: n}` | replaces `/shopping-list`; returns meals, `shopping_list`, `projected_waste_g`, `baseline_waste_g` |
-| `GET /stats`, `POST /checkin`, `POST /reset` | `checked_in_today` added to stats |
-
-## How the planner works (your pitch)
-
-- **No LLM does arithmetic.** Gemini only reads the receipt and maps each line to a fixed ingredient list (`backend/data/canonical.json`). All quantities come from `logic.py`.
-- Cooking takes from the lot that spoils soonest. Missing food is "bought" in whole packages, and the unused part of a package becomes leftover stock that later recipes can use.
-- Each recipe is scored: reward for using up perishables (weighted by how soon they spoil), penalty for each ingredient you'd have to buy (`MISSING_PENALTY` in `logic.py`). The planner picks the best one, updates the stock, and repeats.
-- The waste forecast compares that plan to the average of 200 random plans from the same recipe book. Say exactly that to judges; don't call it a real-world measurement.
-
-## Where to change things
-
-- Add recipes: `backend/data/recipes.json` (use keys from `canonical.json`; a test checks this).
-- Add ingredients, pack sizes, shelf lives, prices: `backend/data/canonical.json`.
-- Make suggestions pickier or looser: `MISSING_PENALTY`, `MAX_MISSING_FOR_SUGGESTION` in `logic.py`.
-- Persist data (Neon/Postgres): replace `backend/store.py`; nothing else touches storage.
-
-## Known gaps
-
-- **The Swift code has not been compiled.** It was written without Xcode. If Xcode shows red errors, paste the exact message to Claude.
-- **The Gemini call is untested** (no API key where this was written). Check the model name in `receipt.py` (`GEMINI_MODEL`) against Google AI Studio, and try 3 real receipts early.
-- Shelf lives, prices and CO2e factors are rough placeholders. Replace them with sourced numbers (for example USDA FoodKeeper for shelf life) before you quote them to judges.
-- State is in memory: restarting the server resets it.
-- Only the first page of a multi-page scan is sent.
+- Single user; no accounts.
+- Only the first page of a multi-page receipt scan is read.
+- Fridge amounts are estimates from a photo, so the review sheet asks you to check them.
+- Photon's free plan only texts numbers registered in the Photon project.
+- Rewind reaches back 6 hours (Neon free plan history window).

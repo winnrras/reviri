@@ -295,10 +295,11 @@ def test_normalize_phone():
 
 
 def test_spoil_alert_lists_today_and_tomorrow_only():
-    inv = [logic.make_lot("chicken_breast", 680, TODAY - timedelta(days=1)),   # 1 day left
-           logic.make_lot("spinach", 283, TODAY - timedelta(days=5)),          # 0 days left
-           logic.make_lot("rice", 907, TODAY),                                 # stable
-           logic.make_lot("milk", 946, TODAY - timedelta(days=9))]             # expired: not "by tomorrow"
+    shelf = lambda c: catalog.info(c)["shelf_life_days"]
+    inv = [logic.make_lot("chicken_breast", 680, TODAY - timedelta(days=shelf("chicken_breast") - 1)),  # 1 day left
+           logic.make_lot("spinach", 283, TODAY - timedelta(days=shelf("spinach"))),                     # 0 days left
+           logic.make_lot("rice", 907, TODAY),                                                           # stable
+           logic.make_lot("milk", 946, TODAY - timedelta(days=shelf("milk") + 2))]                       # expired: not "by tomorrow"
     text = notify.spoil_alert_text(inv, [], TODAY)
     assert text.splitlines() == ["Reviri: use these by tomorrow",
                                  "- Spinach, 283 g (spoils today)",

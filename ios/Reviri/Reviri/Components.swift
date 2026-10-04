@@ -1,34 +1,51 @@
 import SwiftUI
 import UIKit
 
-/// One pantry row: name, amount, and a colored "days left" badge.
+/// One pantry row: food icon, name, "Brand • amount", and a solid "days left" badge.
 struct InventoryRow: View {
     let item: InventoryItem
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
+            IconTile(systemName: Self.symbol(for: item.category))
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.displayName).font(.headline)
-                Text([item.brand, qtyText(item.qtyBase, item.unitBase)].compactMap { $0 }.joined(separator: " · "))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                Text(item.displayName).font(Theme.headline).foregroundStyle(Theme.text)
+                Text([item.brand, qtyText(item.qtyBase, item.unitBase)].compactMap { $0 }.joined(separator: " • "))
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.secondaryText)
             }
-            Spacer()
+            Spacer(minLength: 8)
             if let days = item.daysLeft {
                 DaysBadge(days: days)
             }
         }
+        .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    /// A food icon per category (SF Symbols, close to the Figma line icons).
+    static func symbol(for category: String) -> String {
+        switch category {
+        case "produce": return "leaf"
+        case "dairy": return "drop"
+        case "protein": return "fork.knife"
+        case "eggs": return "oval.portrait"
+        case "grains": return "takeoutbag.and.cup.and.straw"
+        case "drinks": return "waterbottle"
+        default: return "basket"
+        }
     }
 }
 
+/// Solid pill: "Use today" (red), "2d left" (red), "3d left" (orange), "5d left" (green), "Stable" (dark green).
 struct DaysBadge: View {
     let days: Int
 
     private var color: Color {
-        if days <= 2 { return .red }
-        if days <= 4 { return .orange }
-        return .green
+        if days <= 2 { return Theme.red }
+        if days <= 4 { return Theme.orange }
+        if days > 30 { return Theme.stableGreen }
+        return Theme.green
     }
 
     private var label: String {
@@ -39,12 +56,11 @@ struct DaysBadge: View {
 
     var body: some View {
         Text(label)
-            .font(.caption.bold())
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.15))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
+            .font(.system(size: 13, weight: .heavy))
+            .foregroundStyle(Theme.onColor)
+            .padding(.horizontal, 14)
+            .frame(minWidth: 66, minHeight: 28)
+            .background(color, in: Capsule())
     }
 }
 
@@ -82,6 +98,9 @@ struct EditItemView: View {
                 }
             }
             .removeItemDialog($removing) { dismiss() }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background)
+            .tint(Theme.green)
             .navigationTitle("Fix amount")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -112,45 +131,101 @@ struct TextListButton: View {
     let items: [ShoppingItem]
 
     var body: some View {
-        Button {
-            if state.alerts.phone == nil {
-                state.errorMessage = "Add your phone number in Settings (gear on the Scan tab) first."
-            } else {
-                Task { await state.textShoppingList(title: title, items: items) }
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                if state.alerts.phone == nil {
+                    state.errorMessage = "Add your phone number in Settings (gear on the Scan tab) first."
+                } else {
+                    Task { await state.textShoppingList(title: title, items: items) }
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "message").font(.system(size: 18))
+                    Text("Text me this list")
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
             }
-        } label: {
-            Label("Text me this list", systemImage: "message")
+            .buttonStyle(SecondaryButtonStyle())
+            FootnoteText("Powered by Photon • Sent to your registered phone number")
         }
     }
 }
 
-/// Asks how an item left the pantry. Tossing is recorded as waste but never costs the streak,
-/// so people have no reason to lie about it.
+/// Asks how an item left the pantry (Figma: "Used or Wasted Sheet"). Tossing is recorded
+/// as waste but never costs the streak, so people have no reason to lie about it.
 struct RemoveItemDialog: ViewModifier {
-    @Environment(AppState.self) private var state
     @Binding var item: InventoryItem?
     var onDone: () -> Void = {}
 
     func body(content: Content) -> some View {
-        content.confirmationDialog(
-            "Remove \(item?.displayName.lowercased() ?? "item")?",
-            isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } }),
-            titleVisibility: .visible,
-            presenting: item
-        ) { item in
-            Button("Used it") { remove(item, tossed: false) }
-            Button("Threw it away", role: .destructive) { remove(item, tossed: true) }
-        } message: { item in
-            if let days = item.daysLeft, days >= 0, days <= 1 {
-                Text("It's still good today. Next Up has recipes that use it.")
-            } else {
-                Text("Thrown-away food shows on Savings. It never breaks your streak.")
-            }
+        content.sheet(item: $item) { item in
+            RemoveItemSheet(item: item, onDone: onDone)
+                .presentationDetents([.height(380)])
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(24)
         }
     }
+}
 
-    private func remove(_ item: InventoryItem, tossed: Bool) {
+struct RemoveItemSheet: View {
+    @Environment(AppState.self) private var state
+    @Environment(\.dismiss) private var dismiss
+    let item: InventoryItem
+    var onDone: () -> Void
+
+    private var stillGood: Bool { (item.daysLeft ?? -1) >= 0 && (item.daysLeft ?? -1) <= 1 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(item.displayName).font(.system(size: 26, weight: .bold)).foregroundStyle(Theme.text)
+                Text(stillGood ? "It's still good today. Next Up has recipes that use it. If it's gone, what happened?"
+                               : "You finished or removed this item. What happened to it?")
+                    .font(.system(size: 14)).foregroundStyle(Theme.secondaryText)
+            }
+            choice(icon: "checkmark", title: "Used it", detail: "Cooked or eaten.",
+                   tint: Theme.greenTint, border: Theme.usedBorder, ink: Theme.green) { remove(tossed: false) }
+            choice(icon: "trash", title: "Threw it away", detail: "Spoiled or discarded. Counted on Savings, never breaks your streak.",
+                   tint: Theme.tossTint, border: Theme.tossBorder, ink: Theme.tossInk) { remove(tossed: true) }
+            Button("Cancel") { dismiss() }
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Theme.secondaryText)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 28)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Theme.surface)
+    }
+
+    private func choice(icon: String, title: String, detail: String, tint: Color, border: Color, ink: Color,
+                        action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(ink)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(title).font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(title == "Used it" ? Theme.green : Theme.text)
+                    Text(detail).font(Theme.footnote).foregroundStyle(Theme.secondaryText)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(tint, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius).stroke(border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func remove(tossed: Bool) {
         Task { await state.delete(item, tossed: tossed) }
+        dismiss()
         onDone()
     }
 }

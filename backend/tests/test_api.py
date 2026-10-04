@@ -233,8 +233,9 @@ def test_demo_skip_days_ages_the_pantry_not_the_streak():
     client.post("/demo-receipt")
     assert client.post("/checkin").json()["streak_days"] == 1
     inv = client.post("/demo/skip-days?days=3").json()
+    import catalog
     chicken = next(i for i in inv if i["canonical"] == "chicken_breast")
-    assert chicken["days_left"] == -1                              # 2-day shelf life, 3 days later
+    assert chicken["days_left"] == catalog.info("chicken_breast")["shelf_life_days"] - 3   # 3 days later: expired
     stats = client.get("/stats").json()
     assert "Chicken breast" in stats["expired"] and stats["streak_days"] == 1
     assert client.post("/demo/skip-days?days=0").status_code == 400

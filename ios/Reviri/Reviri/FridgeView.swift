@@ -39,8 +39,8 @@ struct CameraPicker: UIViewControllerRepresentable {
     }
 }
 
-/// Review what the fridge photo found before anything is saved.
-/// Update = already in the pantry (the amount is replaced), Add = new, Not tracked = shown only.
+/// Review what the fridge photo found before anything is saved (Figma: "Fridge Review Sheet").
+/// Update = already in the pantry (the amount is replaced), New = added, Not tracked = shown only.
 struct FridgeReviewView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
@@ -63,84 +63,137 @@ struct FridgeReviewView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                rowSection("Update", footer: "Already in your pantry. Saving replaces the amount with what the photo shows.",
-                           action: "update")
-                rowSection("Add", footer: "New to your pantry.", action: "add")
-
-                if !untracked.isEmpty {
-                    Section {
-                        ForEach(untracked) { item in
-                            Text(item.label).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    Text("Gemini detected these items. Toggle items off or tap amounts to adjust. Amounts are estimated from the photo.")
+                        .font(Theme.footnote)
+                        .foregroundStyle(Theme.secondaryText)
+                    group("Update existing items", action: "update")
+                    group("New items found", action: "add")
+                    if !untracked.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            groupLabel("Not tracked")
+                            VStack(spacing: 0) {
+                                ForEach(Array(untracked.enumerated()), id: \.element.id) { index, item in
+                                    if index > 0 { Divider().overlay(Theme.divider) }
+                                    HStack {
+                                        Text(item.label).font(Theme.subhead)
+                                        Spacer()
+                                        Text("(Untracked)").font(Theme.footnote.italic())
+                                    }
+                                    .foregroundStyle(Theme.secondaryText)
+                                    .frame(minHeight: 40)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+                            FootnoteText("Reviri doesn't track these yet, so they aren't saved.")
                         }
-                    } header: {
-                        Text("Not tracked")
-                    } footer: {
-                        Text("Reviri doesn't track these yet, so they aren't saved.")
                     }
                 }
-
-                Section {
-                } footer: {
-                    Text("Amounts are estimated from the photo. Check them before saving.")
-                }
+                .padding(16)
             }
-            .navigationTitle("From your fridge")
+            .background(Theme.background)
+            .safeAreaInset(edge: .bottom) {
+                Button("Save to Pantry") { save() }
+                    .buttonStyle(PrimaryButtonStyle(height: 50))
+                    .disabled(selected.isEmpty)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Theme.background)
+            }
+            .navigationTitle("Review Fridge Scan")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.foregroundStyle(Theme.secondaryText)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
+                        .fontWeight(.bold)
+                        .foregroundStyle(Theme.green)
                         .disabled(selected.isEmpty)
                 }
             }
         }
     }
 
+    private func groupLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Theme.secondaryText)
+    }
+
     @ViewBuilder
-    private func rowSection(_ title: String, footer: String, action: String) -> some View {
+    private func group(_ title: String, action: String) -> some View {
         let indices = rows.indices.filter { rows[$0].item.action == action }
         if !indices.isEmpty {
-            Section {
-                ForEach(indices, id: \.self) { i in
-                    rowView($rows[i])
+            VStack(alignment: .leading, spacing: 8) {
+                groupLabel(title)
+                VStack(spacing: 0) {
+                    ForEach(Array(indices.enumerated()), id: \.element) { position, i in
+                        if position > 0 { Divider().overlay(Theme.divider) }
+                        rowView($rows[i])
+                    }
                 }
-            } header: {
-                Text(title)
-            } footer: {
-                Text(footer)
+                .padding(12)
+                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
             }
         }
     }
 
+    /// Figma "Review item": check toggle, name (+ New badge), editable amount chip.
     private func rowView(_ row: Binding<Row>) -> some View {
         let item = row.wrappedValue.item
-        return VStack(alignment: .leading, spacing: 6) {
-            Toggle(isOn: row.include) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text([item.displayName, item.brand].compactMap { $0 }.joined(separator: " · "))
-                        .font(.headline)
-                    Text(item.label).font(.caption).foregroundStyle(.secondary)
-                }
+        let on = row.wrappedValue.include
+        return HStack(spacing: 10) {
+            Button {
+                row.include.wrappedValue.toggle()
+            } label: {
+                Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 24))
+                    .foregroundStyle(on ? Theme.green : Theme.border)
             }
-            if row.wrappedValue.include {
-                HStack {
-                    if item.action == "update" {
-                        Text("Pantry \(qtyText(item.pantryQty, item.unitBase)) →")
-                            .foregroundStyle(.secondary)
-                    }
-                    TextField("Amount", text: row.qty)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                    Text(item.unitBase == "count" ? "pcs" : item.unitBase)
-                        .foregroundStyle(.secondary)
+            .buttonStyle(.plain)
+            .accessibilityLabel(on ? "Included" : "Skipped")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text([item.displayName, item.brand].compactMap { $0 }.joined(separator: " \u{00B7} "))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(on ? Theme.text : Theme.secondaryText)
+                if item.action == "add" {
+                    Text("New")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.green)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(Theme.greenTint, in: Capsule())
                 }
-                Text(item.estimate).font(.caption2).foregroundStyle(.tertiary)
+                Text(item.estimate).font(.system(size: 11)).foregroundStyle(Theme.secondaryText)
             }
+            Spacer(minLength: 4)
+
+            HStack(spacing: 4) {
+                if item.action == "update" {
+                    Text("\(qtyText(item.pantryQty, item.unitBase)) \u{2192}")
+                        .foregroundStyle(Theme.secondaryText)
+                }
+                TextField("0", text: row.qty)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize()
+                Text(item.unitBase == "count" ? "pcs" : item.unitBase)
+                Image(systemName: "pencil").font(.system(size: 11)).foregroundStyle(Theme.secondaryText)
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(Theme.text)
+            .padding(8)
+            .background(Theme.background, in: RoundedRectangle(cornerRadius: 10))
+            .opacity(on ? 1 : 0.4)
+            .disabled(!on)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 8)
     }
 
     private var selected: [FridgeApplyItem] {
