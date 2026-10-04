@@ -312,3 +312,11 @@ def test_shopping_list_text():
              ShoppingItem(canonical="eggs", display_name="Eggs", qty_base=12, unit_base="count")]
     assert notify.shopping_list_text("Chicken Alfredo", items) == \
         "Reviri shopping list: Chicken Alfredo\n- Pasta, 454 g\n- Eggs, 12 pcs"
+
+
+def test_rows_to_items_reports_untracked_food_lines():
+    skipped = []
+    rows = [{"raw": "BANANAS 2.4 LB", "canonical": None, "qty": 2.4, "unit": "lb"},
+            {"raw": "BROCCOLI CROWNS", "canonical": "broccoli", "qty": 0.85, "unit": "lb"}]
+    items = receipt.rows_to_items(rows, TODAY, skipped)
+    assert [i.canonical for i in items] == ["broccoli"] and skipped == ["BANANAS 2.4 LB"]

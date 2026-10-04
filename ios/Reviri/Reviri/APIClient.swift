@@ -61,6 +61,12 @@ struct APIClient {
         let _: [InventoryItem] = try await send("/fridge/apply", body: FridgeApplyRequest(items: items))
     }
 
+    /// Food lines from the last receipt that Reviri doesn't track.
+    func receiptSkipped() async throws -> [String] {
+        if useMock { return [] }
+        return try await get("/receipt/skipped")
+    }
+
     func demoReceipt() async throws -> [InventoryItem] {
         if useMock { await Mock.pause(); return Mock.inventory }
         return try await sendEmpty("/demo-receipt")

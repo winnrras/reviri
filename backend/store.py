@@ -31,6 +31,7 @@ class Store:
         self.alert_phone: Optional[str] = None
         self.alerts_enabled = False
         self.last_alert_day: Optional[date] = None
+        self.last_receipt_skipped: List[str] = []   # not saved: only shown right after a scan
         self.reset()
         self.db = db
         if db is not None:

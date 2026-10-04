@@ -12,6 +12,7 @@ final class AppState {
     var nextWeek: NextWeekResponse?
     var stats: Stats = .empty
     var lastScan: [InventoryItem] = []
+    var lastScanSkipped: [String] = []      // receipt lines Gemini read but Reviri doesn't track
     var searchResult: Suggestion?           // last recipe found by search (Next Up)
     var fridgeItems: [FridgeItem]?          // proposals from a fridge photo, waiting for review
     var isScanningFridge = false
@@ -31,7 +32,15 @@ final class AppState {
     private func attempt(spinner: Bool = true, _ work: () async throws -> Void) async {
         if spinner { isLoading = true }
         defer { if spinner { isLoading = false } }
-        do { try await work() } catch { errorMessage = error.localizedDescription }
+        do { try await work() } catch { show(error) }
+    }
+
+    /// Shows an error alert, except for cancellations: those happen when a screen is left while it
+    /// was still loading (or a refresh was interrupted), and aren't something the user did wrong.
+    private func show(_ error: Error) {
+        if error is CancellationError { return }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return }
+        errorMessage = error.localizedDescription
     }
 
     private func refreshPantry() async throws {
@@ -66,6 +75,7 @@ final class AppState {
     func scanReceipt(imageData: Data) async {
         await attempt {
             lastScan = try await api.parseReceipt(imageData)
+            lastScanSkipped = (try? await api.receiptSkipped()) ?? []
             try await refreshPantry()
         }
     }
@@ -73,6 +83,7 @@ final class AppState {
     func useDemoReceipt() async {
         await attempt {
             lastScan = try await api.demoReceipt()
+            lastScanSkipped = []
             try await refreshPantry()
         }
     }
@@ -151,7 +162,7 @@ final class AppState {
             let result = try await api.plan(list)
             if token == planToken { planResult = result }   // ignore out-of-order answers
         } catch {
-            errorMessage = error.localizedDescription
+            show(error)
         }
     }
 
@@ -287,7 +298,11 @@ final class AppState {
             planResult = nil
             nextWeek = nil
             lastScan = []
+            lastScanSkipped = []
             try await refreshPantry()
+            infoMessage = api.useMock
+                ? "Mock data is on, so there's nothing to reset. Turn off \"Use mock data\" to use your real pantry."
+                : "Pantry reset to the starting staples. Stats cleared; your phone number and alerts are kept."
         }
     }
 }

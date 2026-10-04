@@ -128,15 +128,23 @@ async def parse_receipt(file: UploadFile = File(...)):
     """Upload a receipt photo (multipart field name: file). Parsed items are added to the pantry."""
     data = await file.read()
     today = date.today()
+    skipped: List[str] = []
     try:
-        items = await receipt.parse_receipt(data, file.content_type or "image/jpeg", today)
+        items = await receipt.parse_receipt(data, file.content_type or "image/jpeg", today, skipped)
     except httpx.HTTPError as e:
         raise HTTPException(502, "Gemini request failed: %s %s" % (type(e).__name__, e))
     except (ValueError, KeyError, IndexError) as e:
         raise HTTPException(502, "Could not read Gemini's answer: %s" % e)
     store.inventory.extend(items)
+    store.last_receipt_skipped = skipped
     ids = {i.id for i in items}
     return [i for i in _inventory_view() if i.id in ids]
+
+
+@app.get("/receipt/skipped", response_model=List[str])
+def receipt_skipped():
+    """Food lines from the last receipt scan that Reviri doesn't track (shown as "Not tracked")."""
+    return store.last_receipt_skipped
 
 
 @app.post("/scan-fridge", response_model=FridgeScanResponse)

@@ -185,6 +185,28 @@ struct ScanView: View {
                         }
                         .card()
                     }
+
+                    if !state.lastScanSkipped.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Not tracked (\(state.lastScanSkipped.count))").sectionTitle()
+                            VStack(spacing: 0) {
+                                ForEach(Array(state.lastScanSkipped.enumerated()), id: \.offset) { index, line in
+                                    if index > 0 { Divider().overlay(Theme.divider) }
+                                    HStack {
+                                        Text(line).font(Theme.subhead)
+                                        Spacer()
+                                        Text("(Untracked)").font(Theme.footnote.italic())
+                                    }
+                                    .foregroundStyle(Theme.secondaryText)
+                                    .frame(minHeight: 40)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 4)
+                            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+                            FootnoteText("Read from your receipt, but Reviri doesn't track these foods yet, so they aren't in your pantry.")
+                        }
+                    }
                 }
                 .padding(16)
             }

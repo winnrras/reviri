@@ -6,7 +6,7 @@ If GEMINI_API_KEY is not set, the server falls back to a built-in demo receipt.
 """
 import base64
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import catalog
 import gemini
@@ -43,13 +43,17 @@ def demo_items(today: date) -> List[InventoryItem]:
     return [logic.make_lot(c, q, today) for c, q in lines]
 
 
-def rows_to_items(rows: List[Dict[str, Any]], today: date) -> List[InventoryItem]:
-    """Turn Gemini's rows into inventory lots. Unknown or unmatched lines are skipped."""
+def rows_to_items(rows: List[Dict[str, Any]], today: date,
+                  skipped: Optional[List[str]] = None) -> List[InventoryItem]:
+    """Turn Gemini's rows into inventory lots. Food lines Reviri doesn't track are skipped,
+    and their text is added to `skipped` (if given) so the app can show them."""
     items = []
     for row in rows:
         canonical = row.get("canonical")
         if not canonical or not catalog.is_known(canonical):
             print("[receipt] skipped unmatched line:", row.get("raw"))
+            if skipped is not None and str(row.get("raw") or "").strip():
+                skipped.append(str(row.get("raw")).strip())
             continue
         try:
             qty = float(row.get("qty") or 1)
@@ -65,7 +69,8 @@ def rows_to_items(rows: List[Dict[str, Any]], today: date) -> List[InventoryItem
     return items
 
 
-async def parse_receipt(image_bytes: bytes, mime_type: str, today: date) -> List[InventoryItem]:
+async def parse_receipt(image_bytes: bytes, mime_type: str, today: date,
+                        skipped: Optional[List[str]] = None) -> List[InventoryItem]:
     if not gemini.has_api_key():
         print("[receipt] GEMINI_API_KEY not set, returning the demo receipt")
         return demo_items(today)
@@ -76,4 +81,4 @@ async def parse_receipt(image_bytes: bytes, mime_type: str, today: date) -> List
     rows = data if isinstance(data, list) else data.get("items", [])
     for row in rows:
         print("[receipt] gemini row:", row)
-    return rows_to_items(rows, today)
+    return rows_to_items(rows, today, skipped)
