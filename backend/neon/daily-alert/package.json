@@ -1,0 +1,14 @@
+{
+  "name": "reviri-daily-alert",
+  "private": true,
+  "type": "module",
+  "description": "Neon Function: texts what spoils by tomorrow, every morning, via Photon Spectrum",
+  "dependencies": {
+    "pg": "^8.23.1",
+    "spectrum-ts": "^12.10.1"
+  },
+  "allowScripts": {
+    "protobufjs@8.8.0": true,
+    "protobufjs@7.6.6": true
+  }
+}

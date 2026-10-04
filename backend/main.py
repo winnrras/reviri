@@ -364,11 +364,33 @@ def _spoil_alert(today: date):
     return notify.spoil_alert_text(store.inventory, logic.suggest(store.inventory, store.recipes, today), today)
 
 
+def _neon_alert_function():
+    """(url, token) of the deployed daily-alert Neon Function, or None (see neon/deploy.py)."""
+    url, token = os.getenv("NEON_ALERT_URL"), os.getenv("NEON_ALERT_TOKEN")
+    return (url, token) if url and token else None
+
+
 @app.post("/alerts/test", response_model=AlertSent)
 async def test_alert():
-    """Send the daily alert right now (for testing and the demo)."""
-    text = _spoil_alert(date.today()) or "Reviri: nothing in your pantry spoils by tomorrow. Nice work."
-    return await _send(text)
+    """Send the daily alert right now (for testing and the demo). When the Neon Function is
+    deployed, this runs it: the same code Neon's 9 AM schedule runs, inside Neon."""
+    neon_fn = _neon_alert_function()
+    if neon_fn is None:
+        text = _spoil_alert(date.today()) or "Reviri: nothing in your pantry spoils by tomorrow. Nice work."
+        return await _send(text)
+    if not store.alert_phone:
+        raise HTTPException(400, "Add your phone number in Settings first.")
+    store.save()          # the function reads the phone number and pantry from Neon
+    url, token = neon_fn
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(url, params={"token": token, "force": "1"})
+        body = r.json()
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(502, "Couldn't reach the Neon Function: %s %s" % (type(e).__name__, e))
+    if not body.get("sent"):
+        raise HTTPException(502, "The Neon Function didn't send it: %s" % body.get("reason"))
+    return AlertSent(text=body["text"])
 
 
 @app.post("/alerts/shopping-list", response_model=AlertSent)
@@ -378,7 +400,11 @@ async def text_shopping_list(req: ShoppingListRequest):
 
 
 async def _daily_alerts():
-    """Background loop: once a day at ALERT_HOUR, text what spoils by tomorrow (if anything does)."""
+    """Background loop: once a day at ALERT_HOUR, text what spoils by tomorrow (if anything does).
+    Off when the Neon Function is deployed: Neon's own schedule sends it then (no double texts)."""
+    if _neon_alert_function() is not None:
+        print("[notify] daily alert runs as a Neon Function; the server's own loop is off")
+        return
     while True:
         now = datetime.now()
         next_run = now.replace(hour=ALERT_HOUR, minute=0, second=0, microsecond=0)

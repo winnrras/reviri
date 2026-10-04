@@ -14,3 +14,4 @@ build/
 
 # Node (Photon sender in backend/notify)
 node_modules/
+backend/neon/daily-alert/dist/

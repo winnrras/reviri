@@ -51,10 +51,35 @@ struct ScanView: View {
     @State private var showFridgeCamera = false
     @State private var showFridgePhotos = false
     @State private var fridgePhotoItem: PhotosPickerItem?
+    @AppStorage("userName") private var userName = ""
+
+    /// "Good morning, Winner" (or just "Good morning" before a name is set in Settings).
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let part = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening"
+        let name = userName.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? part : "\(part), \(name)"
+    }
+
+    /// One useful line under the greeting: what needs eating soon.
+    private var nudge: String {
+        let soon = state.inventory.filter { ($0.daysLeft ?? 99) <= 1 }.count
+        if state.inventory.isEmpty { return "Scan a receipt to fill your pantry." }
+        if soon == 0 { return "Nothing needs using today. Nice." }
+        return soon == 1 ? "1 item to use by tomorrow" : "\(soon) items to use by tomorrow"
+    }
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(greeting).font(.title2.bold())
+                        Text(nudge).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 Section {
                     Button {
                         if VNDocumentCameraViewController.isSupported {

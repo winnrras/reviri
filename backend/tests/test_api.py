@@ -348,3 +348,28 @@ def test_rewind_rejects_bad_input_and_memory_mode(monkeypatch):
     monkeypatch.setattr(main.store, "db", None)
     r = client.get("/rewind/preview?minutes=5")
     assert r.status_code == 503 and "DATABASE_URL" in r.json()["detail"]
+
+
+def test_test_alert_runs_the_neon_function_when_deployed(monkeypatch, sent):
+    import main
+    calls = []
+
+    class FakeResponse:
+        def json(self):
+            return {"sent": True, "text": "Reviri: use these by tomorrow\n- Spinach, 283 g (spoils today)"}
+
+    class FakeClient:
+        def __init__(self, **kw): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): pass
+        async def post(self, url, params=None):
+            calls.append((url, params))
+            return FakeResponse()
+
+    monkeypatch.setenv("NEON_ALERT_URL", "https://fn.example")
+    monkeypatch.setenv("NEON_ALERT_TOKEN", "t0k")
+    monkeypatch.setattr(main.httpx, "AsyncClient", FakeClient)
+    client.put("/alerts", json={"phone": "5551234567", "enabled": True})
+    r = client.post("/alerts/test").json()
+    assert calls == [("https://fn.example", {"token": "t0k", "force": "1"})]
+    assert "Spinach" in r["text"] and sent == []          # sent by Neon, not by the server

@@ -6,11 +6,21 @@ struct SettingsView: View {
     @AppStorage("useMock") private var useMock = true
     @AppStorage("baseURL") private var baseURL = "http://192.168.1.10:8000"
     @State private var phone = ""
+    @AppStorage("userName") private var userName = ""
     @State private var dailyAlert = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    TextField("Your name", text: $userName)
+                        .textContentType(.givenName)
+                } header: {
+                    Text("You")
+                } footer: {
+                    Text("Shown in the greeting on the Scan tab. Stays on this phone.")
+                }
+
                 Section {
                     Toggle("Use mock data (no server)", isOn: $useMock)
                 } footer: {
