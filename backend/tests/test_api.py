@@ -161,3 +161,52 @@ def test_generate_recipe_needs_key_and_a_name(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert client.post("/recipes/generate", json={"name": "pad thai"}).status_code == 503
     assert client.post("/recipes/generate", json={"name": "   "}).status_code == 400
+
+
+# ---- fridge photos (Gemini replaced by a fixed answer)
+
+def test_scan_fridge_proposes_then_apply_updates_without_doubling(monkeypatch):
+    async def fake(parts, label, model=None):
+        return [{"label": "Mainland Butter", "brand": "Mainland", "canonical": "butter", "how": "container",
+                 "fill": "half"},
+                {"label": "Skim milk 1 gal", "canonical": "milk", "how": "container", "fill": "half",
+                 "size_qty": 1, "size_unit": "gal", "size_printed": True},
+                {"label": "Ketchup", "canonical": None, "how": "container"}]
+
+    import gemini
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setattr(gemini, "generate_json", fake)
+    client.post("/demo-receipt")                                   # 227 g butter in the pantry
+    before = client.get("/inventory").json()
+
+    items = client.post("/scan-fridge", files={"file": ("f.jpg", b"img", "image/jpeg")}).json()["items"]
+    by = {i["label"]: i for i in items}
+    assert by["Mainland Butter"]["action"] == "update" and by["Mainland Butter"]["pantry_qty"] == 227
+    assert by["Skim milk 1 gal"]["action"] == "add"
+    assert by["Ketchup"]["action"] == "untracked"
+    assert client.get("/inventory").json() == before               # scanning saves nothing
+
+    inv = client.post("/fridge/apply", json={"items": [
+        {"canonical": "butter", "qty_base": 113.5}, {"canonical": "milk", "qty_base": 1892.7}]}).json()
+    totals = {}
+    for i in inv:
+        totals[i["canonical"]] = totals.get(i["canonical"], 0) + i["qty_base"]
+    assert totals["butter"] == pytest.approx(113.5)                 # updated, not a second pack
+    assert totals["milk"] == pytest.approx(1892.7)
+
+    # The brand read on the package is kept and shown in the pantry.
+    assert by["Mainland Butter"]["brand"] == "Mainland"
+    inv = client.post("/fridge/apply", json={"items": [
+        {"canonical": "butter", "qty_base": 113.5, "brand": "Mainland"}]}).json()
+    assert {i["brand"] for i in inv if i["canonical"] == "butter"} == {"Mainland"}
+
+
+def test_fridge_apply_rejects_bad_input():
+    assert client.post("/fridge/apply", json={"items": [{"canonical": "unicorn", "qty_base": 1}]}).status_code == 400
+    assert client.post("/fridge/apply", json={"items": [{"canonical": "milk", "qty_base": -1}]}).status_code == 400
+
+
+def test_scan_fridge_needs_key(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    r = client.post("/scan-fridge", files={"file": ("f.jpg", b"img", "image/jpeg")})
+    assert r.status_code == 503

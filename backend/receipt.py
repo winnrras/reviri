@@ -20,12 +20,13 @@ SOLD_BY_PACK = {"garlic"}
 
 PROMPT = """You are reading a photo of a grocery receipt.
 Return ONLY a JSON array. One element per FOOD line item:
-{"raw": "<line as printed>", "canonical": "<key from the list below or null>", "qty": <number>, "unit": "<g|kg|oz|lb|ml|l|fl_oz|gal|qt|pt|count>", "confidence": <0 to 1>}
+{"raw": "<line as printed>", "canonical": "<key from the list below or null>", "qty": <number>, "unit": "<g|kg|oz|lb|ml|l|fl_oz|gal|qt|pt|count>", "brand": "<brand or null>", "confidence": <0 to 1>}
 
 Rules:
 - Expand abbreviations (e.g. "ORG BNLS CHKN BRST" = organic boneless chicken breast = chicken_breast).
 - If the line shows a weight or volume (e.g. "1.5 LB", "16 OZ", "1/2 GAL" = 0.5 gal), use it. Otherwise use unit "count" and the number of items.
 - Skip tax, totals, bags, coupons and non-food items (soap, paper towels, etc).
+- brand: the full brand name only if the line names one, spelled out (write "Kroger" for "KRO", "Trader Joe's" for "TJ"), else null.
 - If a food line matches nothing in the list, set canonical to null.
 
 CANONICAL KEYS: %s
@@ -60,7 +61,7 @@ def rows_to_items(rows: List[Dict[str, Any]], today: date) -> List[InventoryItem
         except (ValueError, TypeError):
             # Can't understand the amount: assume one standard package.
             base_qty = catalog.pack_size(canonical)
-        items.append(logic.make_lot(canonical, base_qty, today))
+        items.append(logic.make_lot(canonical, base_qty, today, row.get("brand")))
     return items
 
 

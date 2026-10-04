@@ -25,6 +25,7 @@ CO2E_PER_KG = {
     "eggs": 4.5,
     "grains": 1.5,
     "pantry": 1.5,
+    "drinks": 1.0,
 }
 
 

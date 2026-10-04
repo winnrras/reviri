@@ -20,5 +20,8 @@
   "tortillas":      {"display": "Tortillas",      "unit": "count", "category": "grains",  "shelf_life_days": 14,  "pack_size": 10,  "price_per_kg": 6.0,  "grams_per_count": 40},
   "black_beans":    {"display": "Black beans",    "unit": "g",     "category": "pantry",  "shelf_life_days": 365, "pack_size": 425, "price_per_kg": 3.0},
   "olive_oil":      {"display": "Olive oil",      "unit": "ml",    "category": "pantry",  "shelf_life_days": 365, "pack_size": 500, "price_per_kg": 12.0},
-  "milk":           {"display": "Milk",           "unit": "ml",    "category": "dairy",   "shelf_life_days": 7,   "pack_size": 946, "price_per_kg": 1.2}
+  "milk":           {"display": "Milk",           "unit": "ml",    "category": "dairy",   "shelf_life_days": 7,   "pack_size": 946, "price_per_kg": 1.2},
+  "apple_juice":    {"display": "Apple juice",    "unit": "ml",    "category": "drinks",  "shelf_life_days": 10,  "pack_size": 1890, "price_per_kg": 1.6},
+  "orange_juice":   {"display": "Orange juice",   "unit": "ml",    "category": "drinks",  "shelf_life_days": 10,  "pack_size": 1540, "price_per_kg": 2.6},
+  "yogurt":         {"display": "Yogurt",         "unit": "g",     "category": "dairy",   "shelf_life_days": 14,  "pack_size": 907, "price_per_kg": 4.4}
 }

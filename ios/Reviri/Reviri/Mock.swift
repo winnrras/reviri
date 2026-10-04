@@ -88,6 +88,18 @@ enum Mock {
                           score: 40)
     }
 
+    /// Fridge photo without a server: one of each kind of proposal.
+    static let fridgeItems: [FridgeItem] = [
+        FridgeItem(label: "Heavy whipping cream", canonical: "heavy_cream", displayName: "Heavy cream",
+                   qtyBase: 236, unitBase: "ml", action: "update", pantryQty: 473, estimate: "16 fl oz, about half full"),
+        FridgeItem(label: "Fat free skim milk 1 gal", canonical: "milk", displayName: "Milk",
+                   qtyBase: 2839, unitBase: "ml", action: "add", pantryQty: 0, estimate: "1 gal, mostly full"),
+        FridgeItem(label: "Greek yogurt", canonical: "yogurt", displayName: "Yogurt",
+                   qtyBase: 150, unitBase: "g", action: "add", pantryQty: 0, estimate: "about 150 g, full"),
+        FridgeItem(label: "Heinz Tomato Ketchup", canonical: nil, displayName: "Heinz Tomato Ketchup",
+                   qtyBase: 0, unitBase: "", action: "untracked", pantryQty: 0, estimate: ""),
+    ]
+
     static let stats = Stats(gramsSaved: 370, dollarsSaved: 3.1, co2eSaved: 0.9, streakDays: 3, checkedInToday: false)
     static let statsCheckedIn = Stats(gramsSaved: 370, dollarsSaved: 3.1, co2eSaved: 0.9, streakDays: 4, checkedInToday: true)
 }

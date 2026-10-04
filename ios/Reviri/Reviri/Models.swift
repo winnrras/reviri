@@ -29,6 +29,7 @@ struct InventoryItem: Codable, Identifiable, Hashable {
     var purchasedOn: String
     var shelfLifeDays: Int
     var daysLeft: Int?
+    var brand: String? = nil     // e.g. "Kikkoman", from a receipt or fridge photo
 }
 
 struct MealPick: Codable, Hashable {
@@ -108,6 +109,33 @@ struct NextWeekResponse: Codable, Hashable {
     let shoppingList: [ShoppingItem]
     let projectedWasteG: Double
     let baselineWasteG: Double
+}
+
+struct FridgeItem: Codable, Identifiable, Hashable {
+    var id: String { (canonical ?? "?") + "|" + label }
+    let label: String            // what Gemini saw, e.g. "Fat free skim milk, 1 gallon"
+    let canonical: String?       // nil = not something Reviri tracks
+    let displayName: String
+    let qtyBase: Double          // estimated amount now
+    let unitBase: String
+    let action: String           // "update", "add" or "untracked"
+    let pantryQty: Double        // what the pantry holds now
+    let estimate: String         // how the amount was worked out
+    var brand: String? = nil     // brand read on the package, if any
+}
+
+struct FridgeScanResponse: Codable, Hashable {
+    let items: [FridgeItem]
+}
+
+struct FridgeApplyItem: Codable, Hashable {
+    let canonical: String
+    let qtyBase: Double
+    var brand: String? = nil
+}
+
+struct FridgeApplyRequest: Codable {
+    let items: [FridgeApplyItem]
 }
 
 // MARK: - Display helpers

@@ -13,6 +13,8 @@ final class AppState {
     var stats: Stats = .empty
     var lastScan: [InventoryItem] = []
     var searchResult: Suggestion?           // last recipe found by search (Next Up)
+    var fridgeItems: [FridgeItem]?          // proposals from a fridge photo, waiting for review
+    var isScanningFridge = false
     var isSearching = false
     var isLoading = false
     var errorMessage: String?
@@ -68,6 +70,32 @@ final class AppState {
         await attempt {
             lastScan = try await api.demoReceipt()
             try await refreshPantry()
+        }
+    }
+
+    /// Fridge photo -> proposals for the review sheet. Nothing changes in the pantry yet.
+    func scanFridge(imageData: Data) async {
+        guard !isScanningFridge else { return }
+        isScanningFridge = true
+        defer { isScanningFridge = false }
+        await attempt(spinner: false) {
+            let items = try await api.scanFridge(imageData)
+            if items.isEmpty {
+                infoMessage = "No food found in that photo. Try again with the fridge door open and the light on."
+            } else {
+                fridgeItems = items
+            }
+        }
+    }
+
+    /// Save what the user confirmed on the review sheet.
+    func applyFridge(_ items: [FridgeApplyItem]) async {
+        await attempt {
+            try await api.applyFridge(items)
+            fridgeItems = nil
+            try await refreshPantry()
+            await previewPlan()
+            infoMessage = "Pantry updated: \(items.count) item\(items.count == 1 ? "" : "s") from your fridge."
         }
     }
 

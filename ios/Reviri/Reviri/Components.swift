@@ -9,7 +9,7 @@ struct InventoryRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.displayName).font(.headline)
-                Text(qtyText(item.qtyBase, item.unitBase))
+                Text([item.brand, qtyText(item.qtyBase, item.unitBase)].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -63,13 +63,22 @@ struct EditItemView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(item.displayName) {
+                Section([item.displayName, item.brand].compactMap { $0 }.joined(separator: " · ")) {
                     HStack {
                         TextField("Amount", text: $qtyString)
                             .keyboardType(.decimalPad)
                         Text(item.unitBase == "count" ? "pcs" : item.unitBase)
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                Section {
+                    Button("Remove from pantry", role: .destructive) {
+                        Task { await state.delete(item) }
+                        dismiss()
+                    }
+                } footer: {
+                    Text("Use this if it's gone or thrown away. You can also swipe left on a row in Pantry.")
                 }
             }
             .navigationTitle("Fix amount")

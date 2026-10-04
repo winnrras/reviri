@@ -189,3 +189,70 @@ def test_streak_counts_consecutive_days_and_resets_after_gap(store):
     assert store.streak_days == 2
     store.check_in(TODAY + timedelta(days=4))      # missed days
     assert store.streak_days == 1
+
+
+# ---- fridge photos (no network)
+
+import fridge
+
+
+def test_fridge_estimate_fill_size_and_pieces():
+    half_gallon = {"canonical": "milk", "how": "container", "containers": 1, "fill": "half",
+                   "size_qty": 1, "size_unit": "gal", "size_printed": True}
+    assert fridge.estimate(half_gallon)[0] == pytest.approx(1892.7, abs=0.1)
+    cup = {"canonical": "yogurt", "how": "container", "fill": "full",
+           "size_qty": 150, "size_unit": "g", "size_printed": False}
+    qty, note = fridge.estimate(cup)
+    assert qty == 150 and note.startswith("about")
+    no_size = {"canonical": "butter", "how": "container", "fill": "most"}
+    assert fridge.estimate(no_size)[0] == pytest.approx(0.75 * catalog.pack_size("butter"))
+    assert fridge.estimate({"canonical": "eggs", "how": "pieces", "pieces": 5})[0] == 5
+    assert fridge.estimate({"canonical": "onion", "how": "weight", "grams": 300})[0] == 300
+
+
+def test_fridge_proposals_update_add_untracked_and_merge():
+    inventory = [logic.make_lot("soy_sauce", 296, TODAY)]
+    rows = [
+        {"label": "Kikkoman", "canonical": "soy_sauce", "how": "container", "fill": "half"},
+        {"label": "Skim milk", "canonical": "milk", "how": "container", "fill": "full"},
+        {"label": "Milk", "canonical": "milk", "how": "container", "fill": "half"},
+        {"label": "Canola oil", "canonical": None, "how": "container"},
+        {"label": "Mystery", "canonical": "dragonfruit", "how": "container"},
+    ]
+    got = {p.label: p for p in fridge.to_proposals(rows, inventory)}
+    soy = got["Kikkoman"]
+    assert soy.action == "update" and soy.pantry_qty == 296 and soy.qty_base == 148
+    milk = got["Skim milk + Milk"]
+    assert milk.action == "add" and milk.qty_base == pytest.approx(1.5 * 946)
+    assert got["Canola oil"].action == "untracked" and got["Mystery"].action == "untracked"
+
+
+def test_set_total_takes_from_soonest_spoiling_or_adds_a_lot():
+    old = logic.make_lot("milk", 500, TODAY - timedelta(days=5))
+    new = logic.make_lot("milk", 946, TODAY)
+    lots = [old, new]
+    logic.set_total(lots, "milk", 700, TODAY)
+    assert old.qty_base == 0 and new.qty_base == 700        # the older carton went first
+    logic.set_total(lots, "milk", 1000, TODAY)
+    assert sum(l.qty_base for l in lots if l.canonical == "milk") == pytest.approx(1000)
+    assert lots[-1].qty_base == pytest.approx(300)           # the extra is a new lot
+
+
+def test_brands_from_receipts_fridge_and_cleanup():
+    assert logic.clean_brand("  Kikkoman ") == "Kikkoman"
+    assert logic.clean_brand("unknown") is None and logic.clean_brand(None) is None
+    items = receipt.rows_to_items([{"raw": "KRO SHRP CHED", "canonical": "cheddar", "qty": 8, "unit": "oz",
+                                    "brand": "Kroger"}], TODAY)
+    assert items[0].brand == "Kroger"
+    rows = [{"label": "Kikkoman Soy Sauce", "brand": "Kikkoman", "canonical": "soy_sauce", "how": "container"},
+            {"label": "Milk", "brand": "null", "canonical": "milk", "how": "container"}]
+    got = {p.canonical: p for p in fridge.to_proposals(rows, [])}
+    assert got["soy_sauce"].brand == "Kikkoman" and got["milk"].brand is None
+
+
+def test_set_total_records_the_brand_seen():
+    lots = [logic.make_lot("soy_sauce", 296, TODAY)]
+    logic.set_total(lots, "soy_sauce", 150, TODAY, "Kikkoman")
+    assert [l.brand for l in lots if l.qty_base > 0] == ["Kikkoman"]
+    logic.set_total(lots, "milk", 946, TODAY, "Horizon")
+    assert lots[-1].canonical == "milk" and lots[-1].brand == "Horizon"

@@ -45,16 +45,19 @@ struct APIClient {
 
     func parseReceipt(_ jpeg: Data) async throws -> [InventoryItem] {
         if useMock { await Mock.pause(); return Mock.inventory }
-        let boundary = "Boundary-\(UUID().uuidString)"
-        var body = Data()
-        body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"receipt.jpg\"\r\n".utf8))
-        body.append(Data("Content-Type: image/jpeg\r\n\r\n".utf8))
-        body.append(jpeg)
-        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-        let request = try makeRequest("/parse-receipt", method: "POST", body: body,
-                                      contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120)
-        return try await perform(request)
+        return try await perform(try uploadRequest("/parse-receipt", jpeg: jpeg))
+    }
+
+    /// Fridge photo -> proposed pantry changes. Nothing is saved until applyFridge.
+    func scanFridge(_ jpeg: Data) async throws -> [FridgeItem] {
+        if useMock { await Mock.pause(); return Mock.fridgeItems }
+        let response: FridgeScanResponse = try await perform(try uploadRequest("/scan-fridge", jpeg: jpeg))
+        return response.items
+    }
+
+    func applyFridge(_ items: [FridgeApplyItem]) async throws {
+        if useMock { return }
+        let _: [InventoryItem] = try await send("/fridge/apply", body: FridgeApplyRequest(items: items))
     }
 
     func demoReceipt() async throws -> [InventoryItem] {
@@ -120,6 +123,23 @@ struct APIClient {
 
     // MARK: - Plumbing
 
+    private static let unreachable: Set<URLError.Code> = [
+        .timedOut, .cannotConnectToHost, .cannotFindHost, .notConnectedToInternet, .networkConnectionLost,
+    ]
+
+    /// A photo upload (multipart field "file"). Gemini can take a while, so it waits up to 2 minutes.
+    private func uploadRequest(_ path: String, jpeg: Data) throws -> URLRequest {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n".utf8))
+        body.append(Data("Content-Type: image/jpeg\r\n\r\n".utf8))
+        body.append(jpeg)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        return try makeRequest(path, method: "POST", body: body,
+                               contentType: "multipart/form-data; boundary=\(boundary)", timeout: 120)
+    }
+
     private func makeRequest(_ path: String, method: String, body: Data? = nil,
                              contentType: String = "application/json",
                              timeout: TimeInterval = 60) throws -> URLRequest {
@@ -137,7 +157,15 @@ struct APIClient {
     }
 
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch let error as URLError where Self.unreachable.contains(error.code) {
+            // Usually the Mac changed wifi and got a new address, or this network blocks phone-to-laptop traffic.
+            let address = baseURL?.absoluteString ?? "(none)"
+            throw APIError.server("Can't reach the server at \(address). If you changed wifi, the Mac's address changed too: "
+                                  + "run ipconfig getifaddr en0 and update it in Settings (gear on the Scan tab).")
+        }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.server("No response from the server.")
         }

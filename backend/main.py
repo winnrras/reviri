@@ -9,12 +9,15 @@ from typing import List
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
+import catalog
+import fridge
 import gemini
 import logic
 import receipt
 import recipe_gen
 from models import (
-    CookRequest, CookResponse, GenerateRecipeRequest, InventoryItem, NextWeekRequest,
+    CookRequest, CookResponse, FridgeApplyRequest, FridgeScanResponse, GenerateRecipeRequest,
+    InventoryItem, NextWeekRequest,
     NextWeekResponse, OK, PlanRequest, PlanResult, Recipe, Stats, Suggestion, SuggestionsResponse,
 )
 from store import Store
@@ -66,7 +69,7 @@ async def generate_recipe(req: GenerateRecipeRequest):
             raise HTTPException(422, "\"%s\" doesn't look like a dish. Try something like \"chicken alfredo\"."
                                 % req.name.strip())
         except httpx.HTTPError as e:
-            raise HTTPException(502, "Gemini request failed: %s" % e)
+            raise HTTPException(502, "Gemini request failed: %s %s" % (type(e).__name__, e))
         except (ValueError, KeyError, IndexError) as e:
             raise HTTPException(502, "Couldn't write that recipe: %s" % e)
         store.generated[key] = recipe
@@ -86,12 +89,42 @@ async def parse_receipt(file: UploadFile = File(...)):
     try:
         items = await receipt.parse_receipt(data, file.content_type or "image/jpeg", today)
     except httpx.HTTPError as e:
-        raise HTTPException(502, "Gemini request failed: %s" % e)
+        raise HTTPException(502, "Gemini request failed: %s %s" % (type(e).__name__, e))
     except (ValueError, KeyError, IndexError) as e:
         raise HTTPException(502, "Could not read Gemini's answer: %s" % e)
     store.inventory.extend(items)
     ids = {i.id for i in items}
     return [i for i in _inventory_view() if i.id in ids]
+
+
+@app.post("/scan-fridge", response_model=FridgeScanResponse)
+async def scan_fridge(file: UploadFile = File(...)):
+    """Upload a fridge photo (multipart field name: file). Returns PROPOSED changes:
+    "update" items already in the pantry, "add" new ones, list "untracked" ones. Nothing is saved."""
+    if not gemini.has_api_key():
+        raise HTTPException(503, "Fridge scanning needs GEMINI_API_KEY on the server.")
+    data = await file.read()
+    try:
+        items = await fridge.scan(data, file.content_type or "image/jpeg", store.inventory)
+    except httpx.HTTPError as e:
+        raise HTTPException(502, "Gemini request failed: %s %s" % (type(e).__name__, e))
+    except (ValueError, KeyError, IndexError) as e:
+        raise HTTPException(502, "Could not read Gemini's answer: %s" % e)
+    return FridgeScanResponse(items=items)
+
+
+@app.post("/fridge/apply", response_model=List[InventoryItem])
+def apply_fridge(req: FridgeApplyRequest):
+    """Save the fridge changes the user confirmed: each ingredient's pantry total becomes qty_base."""
+    today = date.today()
+    for item in req.items:
+        if not catalog.is_known(item.canonical):
+            raise HTTPException(400, "Unknown ingredient: %s" % item.canonical)
+        if item.qty_base < 0:
+            raise HTTPException(400, "Quantity can't be negative")
+        logic.set_total(store.inventory, item.canonical, item.qty_base, today, item.brand)
+    store.inventory = [l for l in store.inventory if l.qty_base > logic.EPS]
+    return _inventory_view()
 
 
 @app.post("/demo-receipt", response_model=List[InventoryItem])

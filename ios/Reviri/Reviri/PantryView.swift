@@ -33,6 +33,11 @@ struct PantryView: View {
                 }
             }
             .navigationTitle("Pantry")
+            .toolbar {
+                if !state.inventory.isEmpty {
+                    EditButton()
+                }
+            }
             .refreshable { await state.loadAll() }
             .sheet(item: $editing) { item in
                 EditItemView(item: item)

@@ -30,6 +30,7 @@ class InventoryItem(BaseModel):
     purchased_on: str          # ISO date, e.g. "2026-10-03"
     shelf_life_days: int
     days_left: Optional[int] = None   # filled in by the server
+    brand: Optional[str] = None       # e.g. "Kikkoman", read from a receipt or fridge photo
 
 
 class MealPick(BaseModel):
@@ -115,3 +116,30 @@ class NextWeekResponse(BaseModel):
 
 class OK(BaseModel):
     ok: bool = True
+
+
+class FridgeItem(BaseModel):
+    """One thing seen in a fridge photo, proposed as a pantry change. Nothing is saved yet."""
+    label: str                     # what Gemini saw, e.g. "Fat free skim milk, 1 gallon"
+    canonical: Optional[str]       # None = not something Reviri tracks
+    display_name: str
+    qty_base: float                # estimated amount now (0 for untracked)
+    unit_base: str
+    action: str                    # "update" (already in pantry), "add" (new) or "untracked"
+    pantry_qty: float              # what the pantry holds now (0 for add/untracked)
+    estimate: str                  # how the amount was worked out, e.g. "1 container, about half full"
+    brand: Optional[str] = None    # brand read on the package, if any
+
+
+class FridgeScanResponse(BaseModel):
+    items: List[FridgeItem]
+
+
+class FridgeApplyItem(BaseModel):
+    canonical: str
+    qty_base: float                # the amount the user confirmed
+    brand: Optional[str] = None
+
+
+class FridgeApplyRequest(BaseModel):
+    items: List[FridgeApplyItem]

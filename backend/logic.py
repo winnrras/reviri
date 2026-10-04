@@ -14,7 +14,7 @@ import math
 import random
 import uuid
 from datetime import date
-from typing import Dict, List, NamedTuple, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 import catalog
 from models import (
@@ -34,9 +34,18 @@ MAX_MISSING_FOR_SUGGESTION = 2
 
 # ---------------------------------------------------------------- basics
 
-def make_lot(canonical: str, qty_base: float, today: date) -> InventoryItem:
+def clean_brand(brand: Any) -> Optional[str]:
+    """A brand as Gemini wrote it, or None for blanks and non-answers ("unknown", "generic")."""
+    text = " ".join(str(brand or "").split())[:40]
+    if text.lower() in {"", "null", "none", "unknown", "generic", "n/a", "unbranded"}:
+        return None
+    return text
+
+
+def make_lot(canonical: str, qty_base: float, today: date, brand: Optional[str] = None) -> InventoryItem:
     info = catalog.info(canonical)
     return InventoryItem(
+        brand=clean_brand(brand),
         id=uuid.uuid4().hex[:8],
         canonical=canonical,
         display_name=info["display"],
@@ -88,6 +97,22 @@ def consume(lots: List[InventoryItem], canonical: str, need: float, today: date)
         if need <= EPS:
             return 0.0
     return need
+
+
+def set_total(lots: List[InventoryItem], canonical: str, qty: float, today: date,
+              brand: Optional[str] = None) -> None:
+    """Make the pantry hold exactly `qty` of `canonical` (mutates lots), e.g. after a fridge photo.
+    Less than we thought: take the difference from the soonest-to-spoil lots, the ones most
+    likely already used. More: the extra becomes a new lot bought today.
+    A brand seen on the package is newer than what we knew, so it's set on every lot."""
+    have = sum(l.qty_base for l in _lots_for(lots, canonical))
+    if qty < have - EPS:
+        consume(lots, canonical, have - qty, today)
+    elif qty > have + EPS:
+        lots.append(make_lot(canonical, qty - have, today, brand))
+    if clean_brand(brand):
+        for lot in _lots_for(lots, canonical):
+            lot.brand = clean_brand(brand)
 
 
 def apply_meal(
