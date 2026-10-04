@@ -3,6 +3,8 @@ import SwiftUI
 struct PantryView: View {
     @Environment(AppState.self) private var state
     @State private var editing: InventoryItem?
+    @State private var removing: InventoryItem?
+    @State private var showRewind = false
 
     private var sorted: [InventoryItem] {
         state.inventory.sorted { ($0.daysLeft ?? 999) < ($1.daysLeft ?? 999) }
@@ -16,11 +18,8 @@ struct PantryView: View {
                         .onTapGesture { editing = item }
                 }
                 .onDelete { offsets in
-                    let items = sorted
-                    for index in offsets {
-                        let item = items[index]
-                        Task { await state.delete(item) }
-                    }
+                    // Ask how it left the pantry (used or thrown away) before removing it.
+                    if let index = offsets.first { removing = sorted[index] }
                 }
             }
             .overlay {
@@ -32,12 +31,21 @@ struct PantryView: View {
                     )
                 }
             }
+            .removeItemDialog($removing)
             .navigationTitle("Pantry")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showRewind = true
+                    } label: {
+                        Label("Rewind", systemImage: "clock.arrow.circlepath")
+                    }
+                }
                 if !state.inventory.isEmpty {
-                    EditButton()
+                    ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 }
             }
+            .sheet(isPresented: $showRewind) { RewindView() }
             .refreshable { await state.loadAll() }
             .sheet(item: $editing) { item in
                 EditItemView(item: item)

@@ -68,6 +68,8 @@ class Stats(BaseModel):
     co2e_saved: float
     streak_days: int
     checked_in_today: bool
+    wasted_g: float = 0.0             # food marked "threw it away" (never resets the streak)
+    expired: List[str] = []           # names of pantry items past their date; they block check-in
 
 
 class CookRequest(BaseModel):
@@ -143,3 +145,40 @@ class FridgeApplyItem(BaseModel):
 
 class FridgeApplyRequest(BaseModel):
     items: List[FridgeApplyItem]
+
+
+class AlertSettings(BaseModel):
+    """Text alerts through Photon (iMessage). Kept across demo resets."""
+    phone: Optional[str] = None    # E.164, e.g. "+15551234567"
+    enabled: bool = False          # daily "spoils by tomorrow" alert
+    mode: str = "local"            # "local" (this Mac's Messages) or "cloud" (Spectrum keys set); read-only
+
+
+class ShoppingListRequest(BaseModel):
+    title: str                     # e.g. "Creamy Spinach Chicken" or "This week's plan"
+    items: List[ShoppingItem]
+
+
+class AlertSent(BaseModel):
+    ok: bool = True
+    text: str                      # exactly what was sent, so the app can show it
+
+
+class RewindChange(BaseModel):
+    """One ingredient whose amount differs between the past moment and now."""
+    canonical: str
+    display_name: str
+    unit_base: str
+    qty_then: float
+    qty_now: float
+
+
+class RewindPreview(BaseModel):
+    at: str                        # the past moment (UTC, ISO 8601); send it back to restore exactly this
+    minutes_ago: int
+    items: List[InventoryItem]     # the pantry as it was then (days_left as of today)
+    changes: List[RewindChange]    # what restoring would change, by ingredient
+
+
+class RewindRequest(BaseModel):
+    at: str                        # from a preview

@@ -1,0 +1,25 @@
+{
+  "name": "reviri-notify",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@spectrum-ts/imessage-local": "^12.10.1",
+    "neonctl": "^8.0.6",
+    "spectrum-ts": "^12.10.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "protobufjs@8.8.0": true,
+    "protobufjs@7.6.6": true,
+    "esbuild": false
+  }
+}

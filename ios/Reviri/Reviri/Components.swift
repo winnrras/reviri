@@ -54,6 +54,7 @@ struct EditItemView: View {
     @Environment(\.dismiss) private var dismiss
     let item: InventoryItem
     @State private var qtyString: String
+    @State private var removing: InventoryItem?
 
     init(item: InventoryItem) {
         self.item = item
@@ -74,13 +75,13 @@ struct EditItemView: View {
 
                 Section {
                     Button("Remove from pantry", role: .destructive) {
-                        Task { await state.delete(item) }
-                        dismiss()
+                        removing = item
                     }
                 } footer: {
                     Text("Use this if it's gone or thrown away. You can also swipe left on a row in Pantry.")
                 }
             }
+            .removeItemDialog($removing) { dismiss() }
             .navigationTitle("Fix amount")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -101,6 +102,62 @@ struct EditItemView: View {
         updated.qtyBase = qty
         Task { await state.update(updated) }
         dismiss()
+    }
+}
+
+/// "Text me this list": sends a shopping list to the phone number in Settings, through Photon.
+struct TextListButton: View {
+    @Environment(AppState.self) private var state
+    let title: String
+    let items: [ShoppingItem]
+
+    var body: some View {
+        Button {
+            if state.alerts.phone == nil {
+                state.errorMessage = "Add your phone number in Settings (gear on the Scan tab) first."
+            } else {
+                Task { await state.textShoppingList(title: title, items: items) }
+            }
+        } label: {
+            Label("Text me this list", systemImage: "message")
+        }
+    }
+}
+
+/// Asks how an item left the pantry. Tossing is recorded as waste but never costs the streak,
+/// so people have no reason to lie about it.
+struct RemoveItemDialog: ViewModifier {
+    @Environment(AppState.self) private var state
+    @Binding var item: InventoryItem?
+    var onDone: () -> Void = {}
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            "Remove \(item?.displayName.lowercased() ?? "item")?",
+            isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } }),
+            titleVisibility: .visible,
+            presenting: item
+        ) { item in
+            Button("Used it") { remove(item, tossed: false) }
+            Button("Threw it away", role: .destructive) { remove(item, tossed: true) }
+        } message: { item in
+            if let days = item.daysLeft, days >= 0, days <= 1 {
+                Text("It's still good today. Next Up has recipes that use it.")
+            } else {
+                Text("Thrown-away food shows on Savings. It never breaks your streak.")
+            }
+        }
+    }
+
+    private func remove(_ item: InventoryItem, tossed: Bool) {
+        Task { await state.delete(item, tossed: tossed) }
+        onDone()
+    }
+}
+
+extension View {
+    func removeItemDialog(_ item: Binding<InventoryItem?>, onDone: @escaping () -> Void = {}) -> some View {
+        modifier(RemoveItemDialog(item: item, onDone: onDone))
     }
 }
 

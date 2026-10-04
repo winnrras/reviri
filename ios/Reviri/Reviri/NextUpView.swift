@@ -89,6 +89,9 @@ struct NextUpView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        if !plan.shoppingList.isEmpty {
+                            TextListButton(title: "Next \(plan.meals.count) meals", items: plan.shoppingList)
+                        }
                     }
 
                     Section {
@@ -171,6 +174,7 @@ struct RecipeDetailView: View {
                     Text("Need to buy: " + current.missing.map { $0.displayName }.joined(separator: ", "))
                         .font(.subheadline)
                         .foregroundStyle(.orange)
+                    TextListButton(title: recipe.name, items: current.missing)
                 }
             }
 

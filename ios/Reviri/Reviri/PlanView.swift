@@ -3,6 +3,11 @@ import SwiftUI
 struct PlanView: View {
     @Environment(AppState.self) private var state
 
+    /// "Creamy Spinach Chicken, Spinach Omelette": the title of a texted shopping list.
+    private var pickedNames: String {
+        state.recipes.filter { state.picks[$0.id] != nil }.map(\.name).joined(separator: ", ")
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -42,6 +47,7 @@ struct PlanView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
+                            TextListButton(title: pickedNames, items: plan.missing)
                         }
                     }
 

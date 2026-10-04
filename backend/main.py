@@ -2,28 +2,69 @@
 
 Run:  uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 Docs: http://localhost:8000/docs  (try every endpoint in the browser)
+Keys: put them in backend/.env (see .env.example). That file is in .gitignore: never commit it.
 """
-from datetime import date
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load backend/.env before anything reads the environment. Variables already exported
+# in the terminal win over the file. Tests skip it so they never touch real keys or Neon.
+if not os.getenv("REVIRI_TESTING"):
+    load_dotenv(Path(__file__).parent / ".env")
+import asyncio
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timedelta
 from typing import List
 
 import httpx
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 
 import catalog
+import db
 import fridge
 import gemini
 import logic
+import notify
 import receipt
 import recipe_gen
+import rewind
 from models import (
-    CookRequest, CookResponse, FridgeApplyRequest, FridgeScanResponse, GenerateRecipeRequest,
+    AlertSent, AlertSettings, CookRequest, CookResponse, FridgeApplyRequest, FridgeScanResponse, GenerateRecipeRequest,
     InventoryItem, NextWeekRequest,
-    NextWeekResponse, OK, PlanRequest, PlanResult, Recipe, Stats, Suggestion, SuggestionsResponse,
+    NextWeekResponse, OK, PlanRequest, PlanResult, Recipe, RewindChange, RewindPreview, RewindRequest,
+    ShoppingListRequest, Stats, Suggestion,
+    SuggestionsResponse,
 )
 from store import Store
 
-app = FastAPI(title="Reviri API")
-store = Store()
+# Daily "spoils by tomorrow" text goes out at this hour (Mac's local time).
+ALERT_HOUR = int(os.getenv("ALERT_HOUR", "9"))
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    task = asyncio.create_task(_daily_alerts())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="Reviri API", lifespan=lifespan)
+# DATABASE_URL = Neon's connection string. Without it, state lives in memory only.
+store = Store(db.Database(os.environ["DATABASE_URL"]) if os.getenv("DATABASE_URL") else None)
+
+
+@app.middleware("http")
+async def save_after_changes(request: Request, call_next):
+    """Every request that may have changed something is followed by one save to Neon."""
+    response = await call_next(request)
+    if request.method != "GET" and response.status_code < 400:
+        try:
+            store.save()
+        except Exception as e:   # keep serving from memory; the next save retries everything
+            print("[db] SAVE FAILED, changes are only in memory for now:", e)
+    return response
 
 
 def _inventory_view() -> List[InventoryItem]:
@@ -42,7 +83,8 @@ def _recipe_or_404(recipe_id: str) -> Recipe:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "gemini_key_set": gemini.has_api_key()}
+    return {"ok": True, "gemini_key_set": gemini.has_api_key(),
+            "database": "neon" if store.db is not None else "memory"}
 
 
 @app.get("/recipes", response_model=List[Recipe])
@@ -150,10 +192,11 @@ def update_item(item_id: str, body: InventoryItem):
 
 
 @app.delete("/inventory/{item_id}", response_model=OK)
-def delete_item(item_id: str):
-    before = len(store.inventory)
-    store.inventory = [i for i in store.inventory if i.id != item_id]
-    if len(store.inventory) == before:
+def delete_item(item_id: str, reason: str = "used"):
+    """Remove an item. reason=tossed counts it as wasted on the Savings tab; reason=used doesn't."""
+    if reason not in ("used", "tossed"):
+        raise HTTPException(400, "reason must be used or tossed")
+    if not store.remove(item_id, tossed=(reason == "tossed")):
         raise HTTPException(404, "No such item")
     return OK()
 
@@ -204,10 +247,155 @@ def stats():
 
 @app.post("/checkin", response_model=Stats)
 def checkin():
-    """Streak: 'I wasted nothing today'. Once per day."""
+    """Streak check-in, once per day. Blocked while anything in the pantry is past its date:
+    the streak means "I dealt with all my food today", so expired items must be used or tossed first."""
     today = date.today()
+    expired = sorted({l.display_name.lower() for l in store.expired(today)})
+    if expired:
+        names = expired[0] if len(expired) == 1 else ", ".join(expired[:-1]) + " and " + expired[-1]
+        raise HTTPException(409, "Your %s expired. Mark %s as used or thrown away in Pantry first."
+                            % (names, "it" if len(expired) == 1 else "them"))
     store.check_in(today)
     return store.stats(today)
+
+
+@app.post("/demo/skip-days", response_model=List[InventoryItem])
+def skip_days(days: int = 3):
+    """Demo only (hidden in the app): age the pantry by `days` so food expires during the demo.
+    Negative days undo a skip."""
+    if days == 0 or not -30 <= days <= 30:
+        raise HTTPException(400, "days must be between -30 and 30, and not 0")
+    store.age(days)
+    return _inventory_view()
+
+
+# ---------------------------------------------------------------- rewind (Neon Time Travel)
+
+def _with_days_left(items: List[InventoryItem]) -> List[InventoryItem]:
+    today = date.today()
+    view = [i.model_copy(update={"days_left": logic.days_left(i, today)}) for i in items if i.qty_base > logic.EPS]
+    return sorted(view, key=lambda i: (i.days_left, i.display_name))
+
+
+def _changes(then: List[InventoryItem], now: List[InventoryItem]) -> List[RewindChange]:
+    totals = {}
+    for side, lots in (("then", then), ("now", now)):
+        for lot in lots:
+            entry = totals.setdefault(lot.canonical, {"then": 0.0, "now": 0.0, "lot": lot})
+            entry[side] += lot.qty_base
+    return sorted((RewindChange(canonical=c, display_name=e["lot"].display_name, unit_base=e["lot"].unit_base,
+                                qty_then=round(e["then"], 1), qty_now=round(e["now"], 1))
+                   for c, e in totals.items() if abs(e["then"] - e["now"]) > 0.05),
+                  key=lambda ch: ch.display_name)
+
+
+async def _read_past(when):
+    if store.db is None:
+        raise HTTPException(503, "Rewind needs Neon: add DATABASE_URL to backend/.env and restart the server.")
+    try:
+        return await rewind.read_past(when)
+    except rewind.RewindError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/rewind/preview", response_model=RewindPreview)
+async def rewind_preview(minutes: int):
+    """The pantry as it was `minutes` ago (Neon Time Travel), and what restoring it would change."""
+    try:
+        when = rewind.moment(minutes)
+    except rewind.RewindError as e:
+        raise HTTPException(400, str(e))
+    past = await _read_past(when)
+    return RewindPreview(at=when.isoformat().replace("+00:00", "Z"), minutes_ago=minutes,
+                         items=_with_days_left(past.inventory), changes=_changes(past.inventory, store.inventory))
+
+
+@app.post("/rewind", response_model=List[InventoryItem])
+async def rewind_restore(req: RewindRequest):
+    """Bring back the pantry and food totals from a previewed moment. The streak and
+    settings are not rewound (the check-ins really happened)."""
+    try:
+        when = rewind.parse_moment(req.at)
+    except rewind.RewindError as e:
+        raise HTTPException(400, str(e))
+    past = await _read_past(when)
+    store.inventory = past.inventory
+    for field, value in past.totals.items():
+        setattr(store, field, value)
+    return _inventory_view()      # the middleware saves this to Neon, which becomes the new present
+
+
+# ---------------------------------------------------------------- text alerts (Photon)
+
+def _alert_settings() -> AlertSettings:
+    return AlertSettings(phone=store.alert_phone, enabled=store.alerts_enabled, mode=notify.mode())
+
+
+async def _send(text: str) -> AlertSent:
+    if not store.alert_phone:
+        raise HTTPException(400, "Add your phone number in Settings first.")
+    try:
+        await notify.send_text(store.alert_phone, text)
+    except notify.NotifyError as e:
+        raise HTTPException(502, str(e))
+    return AlertSent(text=text)
+
+
+@app.get("/alerts", response_model=AlertSettings)
+def get_alerts():
+    return _alert_settings()
+
+
+@app.put("/alerts", response_model=AlertSettings)
+def put_alerts(body: AlertSettings):
+    """Save the phone number and the daily alert switch. An empty phone turns alerts off."""
+    if body.phone and body.phone.strip():
+        phone = notify.normalize_phone(body.phone)
+        if phone is None:
+            raise HTTPException(400, "That doesn't look like a phone number. Try +1 555 123 4567.")
+        store.alert_phone = phone
+    else:
+        store.alert_phone = None
+    store.alerts_enabled = body.enabled and store.alert_phone is not None
+    return _alert_settings()
+
+
+def _spoil_alert(today: date):
+    return notify.spoil_alert_text(store.inventory, logic.suggest(store.inventory, store.recipes, today), today)
+
+
+@app.post("/alerts/test", response_model=AlertSent)
+async def test_alert():
+    """Send the daily alert right now (for testing and the demo)."""
+    text = _spoil_alert(date.today()) or "Reviri: nothing in your pantry spoils by tomorrow. Nice work."
+    return await _send(text)
+
+
+@app.post("/alerts/shopping-list", response_model=AlertSent)
+async def text_shopping_list(req: ShoppingListRequest):
+    """'Text me this list': send the shopping list the app is showing."""
+    return await _send(notify.shopping_list_text(req.title, req.items))
+
+
+async def _daily_alerts():
+    """Background loop: once a day at ALERT_HOUR, text what spoils by tomorrow (if anything does)."""
+    while True:
+        now = datetime.now()
+        next_run = now.replace(hour=ALERT_HOUR, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        await asyncio.sleep((next_run - now).total_seconds())
+        today = date.today()
+        if not (store.alerts_enabled and store.alert_phone) or store.last_alert_day == today:
+            continue
+        text = _spoil_alert(today)
+        if text:
+            try:
+                await notify.send_text(store.alert_phone, text)
+                store.last_alert_day = today
+                store.save()
+            except notify.NotifyError as e:
+                print("[notify] daily alert failed:", e)
 
 
 @app.post("/reset", response_model=OK)

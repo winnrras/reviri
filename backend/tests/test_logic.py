@@ -5,6 +5,7 @@ import pytest
 import catalog
 import logic
 import receipt
+from models import ShoppingItem
 from store import STAPLES, Store
 from units import to_base
 
@@ -256,3 +257,57 @@ def test_set_total_records_the_brand_seen():
     assert [l.brand for l in lots if l.qty_base > 0] == ["Kikkoman"]
     logic.set_total(lots, "milk", 946, TODAY, "Horizon")
     assert lots[-1].canonical == "milk" and lots[-1].brand == "Horizon"
+
+
+def test_tossing_counts_as_waste_but_never_touches_the_streak(store):
+    store.inventory = demo_pantry()
+    store.check_in(TODAY)
+    spinach = next(l for l in store.inventory if l.canonical == "spinach")
+    assert store.remove(spinach.id, tossed=True)
+    assert store.stats(TODAY).wasted_g == pytest.approx(283)
+    assert store.streak_days == 1
+    eggs = next(l for l in store.inventory if l.canonical == "eggs")
+    assert store.remove(eggs.id, tossed=False)            # used: no waste recorded
+    assert store.stats(TODAY).wasted_g == pytest.approx(283)
+    assert not store.remove("nope", tossed=True)
+
+
+def test_expired_items_are_listed_until_dealt_with(store):
+    store.inventory = demo_pantry()
+    later = TODAY + timedelta(days=3)                     # chicken (2-day shelf life) is now past its date
+    assert [l.canonical for l in store.expired(later)] == ["chicken_breast"]
+    assert store.stats(later).expired == ["Chicken breast"]
+    chicken = store.expired(later)[0]
+    store.remove(chicken.id, tossed=True)
+    assert store.expired(later) == []
+
+
+# ---- text alerts (no sending)
+
+import notify
+
+
+def test_normalize_phone():
+    assert notify.normalize_phone("(555) 123-4567") == "+15551234567"
+    assert notify.normalize_phone("1-555-123-4567") == "+15551234567"
+    assert notify.normalize_phone("+62 812 3456 7890") == "+6281234567890"
+    assert notify.normalize_phone("12345") is None and notify.normalize_phone("") is None
+
+
+def test_spoil_alert_lists_today_and_tomorrow_only():
+    inv = [logic.make_lot("chicken_breast", 680, TODAY - timedelta(days=1)),   # 1 day left
+           logic.make_lot("spinach", 283, TODAY - timedelta(days=5)),          # 0 days left
+           logic.make_lot("rice", 907, TODAY),                                 # stable
+           logic.make_lot("milk", 946, TODAY - timedelta(days=9))]             # expired: not "by tomorrow"
+    text = notify.spoil_alert_text(inv, [], TODAY)
+    assert text.splitlines() == ["Reviri: use these by tomorrow",
+                                 "- Spinach, 283 g (spoils today)",
+                                 "- Chicken breast, 680 g (spoils tomorrow)"]
+    assert notify.spoil_alert_text([logic.make_lot("rice", 907, TODAY)], [], TODAY) is None
+
+
+def test_shopping_list_text():
+    items = [ShoppingItem(canonical="pasta", display_name="Pasta", qty_base=454, unit_base="g"),
+             ShoppingItem(canonical="eggs", display_name="Eggs", qty_base=12, unit_base="count")]
+    assert notify.shopping_list_text("Chicken Alfredo", items) == \
+        "Reviri shopping list: Chicken Alfredo\n- Pasta, 454 g\n- Eggs, 12 pcs"

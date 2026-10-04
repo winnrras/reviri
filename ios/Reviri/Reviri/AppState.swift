@@ -15,6 +15,9 @@ final class AppState {
     var searchResult: Suggestion?           // last recipe found by search (Next Up)
     var fridgeItems: [FridgeItem]?          // proposals from a fridge photo, waiting for review
     var isScanningFridge = false
+    var alerts: AlertSettings = .empty      // text alerts through Photon
+    var rewindPreview: RewindPreview?       // the pantry at a past moment (Neon Time Travel)
+    var isRewinding = false
     var isSearching = false
     var isLoading = false
     var errorMessage: String?
@@ -48,6 +51,7 @@ final class AppState {
         await attempt {
             recipes = try await api.recipes()
             try await refreshPantry()
+            alerts = (try? await api.alerts()) ?? alerts
         }
     }
 
@@ -112,9 +116,10 @@ final class AppState {
         }
     }
 
-    func delete(_ item: InventoryItem) async {
+    /// tossed = "threw it away": counted as waste on Savings, but never resets the streak.
+    func delete(_ item: InventoryItem, tossed: Bool) async {
         await attempt {
-            try await api.deleteItem(id: item.id)
+            try await api.deleteItem(id: item.id, tossed: tossed)
             lastScan.removeAll { $0.id == item.id }
             try await refreshPantry()
             await previewPlan()
@@ -214,6 +219,64 @@ final class AppState {
     func checkIn() async {
         await attempt {
             stats = try await api.checkIn()
+        }
+    }
+
+    // MARK: - Rewind (Neon Time Travel)
+
+    /// Look at the pantry as it was `minutes` ago. Takes about 2 seconds (Neon opens a past copy).
+    func previewRewind(minutes: Int) async {
+        isRewinding = true
+        defer { isRewinding = false }
+        await attempt(spinner: false) {
+            rewindPreview = try await api.rewindPreview(minutes: minutes)
+        }
+    }
+
+    /// Make the previewed moment the present.
+    func applyRewind() async {
+        guard let preview = rewindPreview else { return }
+        await attempt {
+            try await api.rewind(at: preview.at)
+            rewindPreview = nil
+            lastScan = []
+            try await refreshPantry()
+            await previewPlan()
+            infoMessage = "Pantry rewound to \(preview.minutesAgo) minutes ago."
+        }
+    }
+
+    // MARK: - Text alerts (Photon)
+
+    func saveAlerts(phone: String, enabled: Bool) async {
+        await attempt {
+            alerts = try await api.saveAlerts(AlertSettings(phone: phone, enabled: enabled))
+        }
+    }
+
+    func sendTestAlert() async {
+        await attempt {
+            let sent = try await api.testAlert()
+            infoMessage = "Sent with Photon:\n\n\(sent.text)"
+        }
+    }
+
+    func textShoppingList(title: String, items: [ShoppingItem]) async {
+        await attempt {
+            let sent = try await api.textShoppingList(title: title, items: items)
+            infoMessage = "Sent with Photon:\n\n\(sent.text)"
+        }
+    }
+
+    /// Demo only: make the pantry `days` older so something expires (and blocks check-in).
+    func skipDays(_ days: Int) async {
+        await attempt {
+            try await api.skipDays(days)
+            try await refreshPantry()
+            await previewPlan()
+            let expired = stats.expired.map { $0.lowercased() }.joined(separator: ", ")
+            let did = days > 0 ? "Skipped \(days) days." : "Undid the skip."
+            infoMessage = expired.isEmpty ? "\(did) Nothing has expired." : "\(did) Expired: \(expired)."
         }
     }
 

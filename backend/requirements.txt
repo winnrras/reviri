@@ -4,3 +4,6 @@ python-multipart
 httpx
 pydantic
 pytest
+python-dotenv        # reads keys from backend/.env
+psycopg[binary]      # Neon (Postgres) persistence, see db.py
+pgserver             # tests only: a throwaway local Postgres

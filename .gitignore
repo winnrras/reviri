@@ -11,3 +11,6 @@ xcuserdata/
 DerivedData/
 *.xcuserstate
 build/
+
+# Node (Photon sender in backend/notify)
+node_modules/

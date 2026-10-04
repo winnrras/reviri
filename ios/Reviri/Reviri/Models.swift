@@ -65,6 +65,8 @@ struct Stats: Codable, Hashable {
     let co2eSaved: Double
     let streakDays: Int
     let checkedInToday: Bool
+    var wastedG: Double = 0          // food marked "threw it away" (never resets the streak)
+    var expired: [String] = []       // pantry items past their date; they block check-in
 
     static let empty = Stats(gramsSaved: 0, dollarsSaved: 0, co2eSaved: 0, streakDays: 0, checkedInToday: false)
 }
@@ -136,6 +138,44 @@ struct FridgeApplyItem: Codable, Hashable {
 
 struct FridgeApplyRequest: Codable {
     let items: [FridgeApplyItem]
+}
+
+struct AlertSettings: Codable, Hashable {
+    var phone: String?
+    var enabled: Bool
+    var mode: String = "local"   // "local" (the server Mac's Messages) or "cloud" (Spectrum keys set)
+
+    static let empty = AlertSettings(phone: nil, enabled: false)
+}
+
+struct ShoppingListRequest: Codable {
+    let title: String
+    let items: [ShoppingItem]
+}
+
+struct AlertSent: Codable, Hashable {
+    let ok: Bool
+    let text: String
+}
+
+struct RewindChange: Codable, Identifiable, Hashable {
+    var id: String { canonical }
+    let canonical: String
+    let displayName: String
+    let unitBase: String
+    let qtyThen: Double
+    let qtyNow: Double
+}
+
+struct RewindPreview: Codable, Hashable {
+    let at: String                 // the past moment; sent back to restore exactly it
+    let minutesAgo: Int
+    let items: [InventoryItem]     // the pantry as it was then
+    let changes: [RewindChange]    // what restoring would change
+}
+
+struct RewindRequest: Codable {
+    let at: String
 }
 
 // MARK: - Display helpers

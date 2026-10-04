@@ -210,3 +210,141 @@ def test_scan_fridge_needs_key(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     r = client.post("/scan-fridge", files={"file": ("f.jpg", b"img", "image/jpeg")})
     assert r.status_code == 503
+
+
+def test_checkin_blocked_by_expired_food_until_tossed():
+    import main
+    from datetime import date, timedelta
+    client.post("/demo-receipt")
+    chicken = next(l for l in main.store.inventory if l.canonical == "chicken_breast")
+    chicken.purchased_on = (date.today() - timedelta(days=5)).isoformat()   # now past its date
+
+    r = client.post("/checkin")
+    assert r.status_code == 409 and "chicken breast expired" in r.json()["detail"]
+    assert client.get("/stats").json()["expired"] == ["Chicken breast"]
+
+    assert client.delete("/inventory/%s?reason=tossed" % chicken.id).status_code == 200
+    stats = client.post("/checkin").json()
+    assert stats["streak_days"] == 1 and stats["wasted_g"] == 680 and stats["expired"] == []
+    assert client.delete("/inventory/x?reason=lost").status_code == 400
+
+
+def test_demo_skip_days_ages_the_pantry_not_the_streak():
+    client.post("/demo-receipt")
+    assert client.post("/checkin").json()["streak_days"] == 1
+    inv = client.post("/demo/skip-days?days=3").json()
+    chicken = next(i for i in inv if i["canonical"] == "chicken_breast")
+    assert chicken["days_left"] == -1                              # 2-day shelf life, 3 days later
+    stats = client.get("/stats").json()
+    assert "Chicken breast" in stats["expired"] and stats["streak_days"] == 1
+    assert client.post("/demo/skip-days?days=0").status_code == 400
+
+
+def test_demo_undo_skip_restores_dates_but_not_further():
+    client.post("/demo-receipt")
+    fresh = {i["id"]: i["days_left"] for i in client.get("/inventory").json()}
+    client.post("/demo/skip-days?days=3")
+    back = {i["id"]: i["days_left"] for i in client.post("/demo/skip-days?days=-3").json()}
+    assert back == fresh
+    again = {i["id"]: i["days_left"] for i in client.post("/demo/skip-days?days=-3").json()}
+    assert again == fresh                                          # nothing to undo: no change
+
+
+# ---- text alerts (Photon replaced by a fake sender)
+
+@pytest.fixture
+def sent(monkeypatch):
+    import main
+    import notify
+    box = []
+
+    async def fake_send(to, text):
+        box.append((to, text))
+        return "local"
+
+    monkeypatch.setattr(notify, "send_text", fake_send)
+    main.store.alert_phone, main.store.alerts_enabled = None, False
+    return box
+
+
+def test_alert_settings_validate_and_survive_reset(sent):
+    assert client.put("/alerts", json={"phone": "12", "enabled": True}).status_code == 400
+    s = client.put("/alerts", json={"phone": "(555) 123-4567", "enabled": True}).json()
+    assert s["phone"] == "+15551234567" and s["enabled"] is True and s["mode"] in ("local", "cloud")
+    client.post("/reset")
+    assert client.get("/alerts").json()["phone"] == "+15551234567"
+    assert client.put("/alerts", json={"phone": "", "enabled": True}).json()["enabled"] is False
+
+
+def test_test_alert_and_shopping_list_are_sent(sent):
+    assert client.post("/alerts/test").status_code == 400            # no phone yet
+    client.put("/alerts", json={"phone": "5551234567", "enabled": False})
+    client.post("/demo-receipt")
+    client.post("/demo/skip-days?days=1")                             # chicken: 1 day left
+    r = client.post("/alerts/test").json()
+    assert sent[-1] == ("+15551234567", r["text"]) and "Chicken breast" in r["text"]
+
+    body = {"title": "Chicken Alfredo",
+            "items": [{"canonical": "pasta", "display_name": "Pasta", "qty_base": 454, "unit_base": "g"}]}
+    r = client.post("/alerts/shopping-list", json=body).json()
+    assert r["text"] == "Reviri shopping list: Chicken Alfredo\n- Pasta, 454 g" and sent[-1][1] == r["text"]
+
+
+def test_send_failure_is_a_readable_error(monkeypatch, sent):
+    import notify
+
+    async def broken(to, text):
+        raise notify.NotifyError("Photon couldn't send the text: not signed in")
+
+    monkeypatch.setattr(notify, "send_text", broken)
+    client.put("/alerts", json={"phone": "5551234567", "enabled": False})
+    r = client.post("/alerts/test")
+    assert r.status_code == 502 and "not signed in" in r.json()["detail"]
+
+
+# ---- rewind (Neon Time Travel replaced by a fixed "past")
+
+def test_rewind_preview_and_restore(monkeypatch):
+    import main
+    import rewind
+    from datetime import date
+    from store import STAPLES
+    import logic
+
+    past_lots = [logic.make_lot(c, q, date.today()) for c, q in STAPLES]       # before the receipt scan
+    asked = []
+
+    async def fake_read_past(when):
+        asked.append(when)
+        return rewind.PastState(at=when, inventory=[l.model_copy() for l in past_lots],
+                                totals={"grams_saved": 0.0, "dollars_saved": 0.0, "co2e_saved": 0.0,
+                                        "wasted_g": 0.0, "skipped_days": 0})
+
+    monkeypatch.setattr(rewind, "read_past", fake_read_past)
+    monkeypatch.setattr(main.store, "db", object())             # pretend Neon is connected
+    client.post("/demo-receipt")
+    main.store.wasted_g = 500
+    assert client.post("/checkin").json()["streak_days"] == 1
+
+    p = client.get("/rewind/preview?minutes=15").json()
+    assert p["minutes_ago"] == 15 and len(p["items"]) == 3
+    chicken = next(c for c in p["changes"] if c["canonical"] == "chicken_breast")
+    assert chicken["qty_then"] == 0 and chicken["qty_now"] == 680
+    assert not any(c["canonical"] == "rice" for c in p["changes"])    # unchanged items aren't listed
+
+    inv = client.post("/rewind", json={"at": p["at"]}).json()
+    assert sorted(i["canonical"] for i in inv) == sorted(c for c, _ in STAPLES)
+    assert asked[-1].isoformat().replace("+00:00", "Z") == p["at"]    # restored exactly the previewed moment
+    stats = client.get("/stats").json()
+    assert stats["wasted_g"] == 0 and stats["streak_days"] == 1      # totals rewound, streak kept
+
+
+def test_rewind_rejects_bad_input_and_memory_mode(monkeypatch):
+    import main
+    assert client.get("/rewind/preview?minutes=0").status_code == 400
+    assert client.get("/rewind/preview?minutes=361").status_code == 400
+    assert client.post("/rewind", json={"at": "2020-01-01T00:00:00Z"}).status_code == 400
+    assert client.post("/rewind", json={"at": "yesterday"}).status_code == 400
+    monkeypatch.setattr(main.store, "db", None)
+    r = client.get("/rewind/preview?minutes=5")
+    assert r.status_code == 503 and "DATABASE_URL" in r.json()["detail"]

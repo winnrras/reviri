@@ -16,6 +16,7 @@ enum APIError: LocalizedError {
 private struct PlanRequest: Encodable { let picks: [MealPick] }
 private struct NextWeekRequest: Encodable { let meals: Int }
 private struct OK: Decodable { let ok: Bool }
+private struct ErrorBody: Decodable { let detail: String }
 
 /// Talks to the FastAPI server. Settings (mock mode, server address) live in UserDefaults
 /// so the Settings screen can change them while the app is running.
@@ -70,9 +71,10 @@ struct APIClient {
         return try await send("/inventory/\(item.id)", method: "PUT", body: item)
     }
 
-    func deleteItem(id: String) async throws {
+    /// tossed = true records it as wasted on the Savings tab.
+    func deleteItem(id: String, tossed: Bool) async throws {
         if useMock { return }
-        let _: OK = try await sendEmpty("/inventory/\(id)", method: "DELETE")
+        let _: OK = try await sendEmpty("/inventory/\(id)?reason=\(tossed ? "tossed" : "used")", method: "DELETE")
     }
 
     func plan(_ picks: [MealPick]) async throws -> PlanResult {
@@ -114,6 +116,46 @@ struct APIClient {
     func checkIn() async throws -> Stats {
         if useMock { return Mock.statsCheckedIn }
         return try await sendEmpty("/checkin")
+    }
+
+    // MARK: Rewind (Neon Time Travel)
+
+    func rewindPreview(minutes: Int) async throws -> RewindPreview {
+        if useMock { await Mock.pause(); return Mock.rewindPreview(minutes) }
+        return try await get("/rewind/preview?minutes=\(minutes)")
+    }
+
+    func rewind(at: String) async throws {
+        if useMock { return }
+        let _: [InventoryItem] = try await send("/rewind", body: RewindRequest(at: at))
+    }
+
+    // MARK: Text alerts (Photon)
+
+    func alerts() async throws -> AlertSettings {
+        if useMock { return .empty }
+        return try await get("/alerts")
+    }
+
+    func saveAlerts(_ settings: AlertSettings) async throws -> AlertSettings {
+        if useMock { return settings }
+        return try await send("/alerts", method: "PUT", body: settings)
+    }
+
+    func testAlert() async throws -> AlertSent {
+        if useMock { await Mock.pause(); return AlertSent(ok: true, text: "(mock mode: nothing was sent)") }
+        return try await sendEmpty("/alerts/test")
+    }
+
+    func textShoppingList(title: String, items: [ShoppingItem]) async throws -> AlertSent {
+        if useMock { await Mock.pause(); return AlertSent(ok: true, text: "(mock mode: nothing was sent)") }
+        return try await send("/alerts/shopping-list", body: ShoppingListRequest(title: title, items: items))
+    }
+
+    /// Demo only: age the pantry so food expires on stage. Hidden behind a swipe in Settings.
+    func skipDays(_ days: Int) async throws {
+        if useMock { return }
+        let _: [InventoryItem] = try await sendEmpty("/demo/skip-days?days=\(days)")
     }
 
     func reset() async throws {
@@ -170,6 +212,10 @@ struct APIClient {
             throw APIError.server("No response from the server.")
         }
         guard (200..<300).contains(http.statusCode) else {
+            // FastAPI explains errors as {"detail": "..."}: show just that sentence when we can.
+            if let body = try? JSONDecoder().decode(ErrorBody.self, from: data) {
+                throw APIError.server(body.detail)
+            }
             let text = String(data: data, encoding: .utf8) ?? ""
             throw APIError.server("Server error \(http.statusCode): \(text)")
         }

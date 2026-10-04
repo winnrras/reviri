@@ -100,6 +100,17 @@ enum Mock {
                    qtyBase: 0, unitBase: "", action: "untracked", pantryQty: 0, estimate: ""),
     ]
 
+    /// Rewind without a server: the pantry "before" a scan, so the screen can be designed.
+    static func rewindPreview(_ minutes: Int) -> RewindPreview {
+        RewindPreview(
+            at: "2026-10-04T06:00:00Z", minutesAgo: minutes, items: Array(inventory.prefix(3)),
+            changes: [
+                RewindChange(canonical: "eggs", displayName: "Eggs", unitBase: "count", qtyThen: 0, qtyNow: 12),
+                RewindChange(canonical: "cheddar", displayName: "Cheddar", unitBase: "g", qtyThen: 0, qtyNow: 227),
+                RewindChange(canonical: "spinach", displayName: "Spinach", unitBase: "g", qtyThen: 283, qtyNow: 0),
+            ])
+    }
+
     static let stats = Stats(gramsSaved: 370, dollarsSaved: 3.1, co2eSaved: 0.9, streakDays: 3, checkedInToday: false)
     static let statsCheckedIn = Stats(gramsSaved: 370, dollarsSaved: 3.1, co2eSaved: 0.9, streakDays: 4, checkedInToday: true)
 }
